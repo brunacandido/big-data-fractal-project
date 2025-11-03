@@ -19,7 +19,7 @@ The project uses the FRACTAL dataset, which consists of large-scale LiDAR point 
 - Evaluate speedup curves for dataset fractions 1%,5%,10%,25%,50%,100% on *n* nodes.
 
 ### Repository Structure
-*!still in development!
+*!!still in development*
 ```
 big-data-fractal-project/
 │
@@ -29,9 +29,8 @@ big-data-fractal-project/
 │   ├─ scalability.py        # Scripts for running speedup experiments
 ├─ models/                   # Saved trained models
 ├─ figures/                  # Plots for report
-├─ reports/                  # PDF report describing methodology and results
+├─ reports/                  # PDF final report
 ├─ README.md
-└─ requirements.txt          # Python dependencies
 ```
 
 ## Contributors  
