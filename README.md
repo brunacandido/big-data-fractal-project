@@ -30,6 +30,3 @@ big-data-fractal-project/
 ├─ reports/                  # PDF final report
 ├─ README.md
 ```
-
-## Contributors  
-[![Contributors](https://contrib.rocks/image?repo=brunacandido/big-data-fractal-project)](https://github.com/brunacandido/big-data-fractal-project/graphs/contributors)
