@@ -19,14 +19,12 @@ The project uses the FRACTAL dataset, which consists of large-scale LiDAR point 
 - Evaluate speedup curves for dataset fractions 1%,5%,10%,25%,50%,100% on *n* nodes.
 
 ### Repository Structure
-*!!still in development*
 ```
 big-data-fractal-project/
 │
 ├─ src/                      # PySpark scripts for preprocessing and ML pipeline
 │   ├─ preprocess.py         # Data cleaning, filtering, and feature engineering
-│   ├─ train_model.py        # Model training and evaluation
-│   ├─ scalability.py        # Scripts for running speedup experiments
+│   ├─ model.py              # Model training and evaluation
 ├─ models/                   # Saved trained models
 ├─ figures/                  # Plots for report
 ├─ reports/                  # PDF final report
