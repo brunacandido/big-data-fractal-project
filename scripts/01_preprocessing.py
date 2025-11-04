@@ -1,23 +1,19 @@
 # BIG DATA 
-# Land cover classification of FRACTAL dataset
-# Loading, remap classification, and distribution per dataset (train/test/val)
-
+# FRACTAL pipeline: remap classification and compute distributions
 # Bruna Cândido ; Ethel Ogallo
 # last update: 2025/11/04
-
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, count, lit, round as spark_round
 from sparkmeasure import TaskMetrics
-
 import argparse
-from functools import reduce
 
+# -------------------------------------------------------
 # Default arguments
-# local testing files on S3
+# -------------------------------------------------------
+# local testing
 default_parq_files = [
-    # example small files for local testing
-    # first 9 from TRAIN
+    # from TRAIN
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955257.parquet",
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955299.parquet",
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955400.parquet",
@@ -27,7 +23,7 @@ default_parq_files = [
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210520.parquet",
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210573.parquet",
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210596.parquet",
-    # first 9 from TEST
+    # from TEST
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325248.parquet",
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325312.parquet",
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325319.parquet",
@@ -38,7 +34,7 @@ default_parq_files = [
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103656.parquet",
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103675.parquet",
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103798.parquet",
-    # first 2 from VAL
+    # from VAL
     "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6406-003134108.parquet",
     "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6407-002561599.parquet",
     "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6408-002409795.parquet",
@@ -50,120 +46,125 @@ default_parq_files = [
     "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6417-002457489.parquet",
     "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6420-002760111.parquet"
 ]
-# cluster files would be like:
+
+# cluster files
 # default_parq_files = [
 #     "s3a://ubs-datasets/FRACTAL/data/train/",
 #     "s3a://ubs-datasets/FRACTAL/data/test/",
 #     "s3a://ubs-datasets/FRACTAL/data/val/"
-# ]  
-# Memory settings
+# ]
+
 default_executor_mem = "4g"
 default_driver_mem = "4g"
+parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
-
-# -------------------------
-# Preprocessing function
-# -------------------------
-
-# 1. Remapping classification feature
-def remap_classification(df, classification_col="Classification"):
+# 1. Remapping function
+def remap_classification(df):
     """
-    Remap the 'Classification' column in the FRACTAL dataset
+    Remap the 'Classification' column in the FRACTAL dataset.
+
+    Mapping:
+    1 -> 1 (Unclassified)
+    2 -> 2 (Ground)
+    3,4,5 -> 3 (Vegetation)
+    6 -> 4 (Building)
+    9 -> 5 (Water)
+    17 -> 6 (Bridge)
+    64 -> 7 (Permanent structures)
+    65,66 -> 8 (Filtered/Artifacts)
+    Any other value -> None
     """
     return df.withColumn(
-        classification_col,
-        when(col(classification_col) == 1, lit(1))
-        .when(col(classification_col) == 2, lit(2))
-        .when(col(classification_col).isin(3, 4, 5), lit(3))
-        .when(col(classification_col) == 6, lit(4))
-        .when(col(classification_col) == 9, lit(5))
-        .when(col(classification_col) == 17, lit(6))
-        .when(col(classification_col) == 64, lit(7))
-        .when(col(classification_col).isin(65, 66), lit(8))
+        "Classification",
+        when(col("Classification") == 1, lit(1))
+        .when(col("Classification") == 2, lit(2))
+        .when(col("Classification").isin(3,4,5), lit(3))
+        .when(col("Classification") == 6, lit(4))
+        .when(col("Classification") == 9, lit(5))
+        .when(col("Classification") == 17, lit(6))
+        .when(col("Classification") == 64, lit(7))
+        .when(col("Classification").isin(65,66), lit(8))
         .otherwise(None)
     )
 
-# -------------------------
+# 2. Compute percentage distribution
+def compute_distribution(df, name):
+    """
+    Compute the percentage distribution of 'Classification' column in the DataFrame.
+
+    Args:
+        df (DataFrame): Input Spark DataFrame with 'Classification' column.
+        name (str): Name of the column to store the percentages (e.g., "Train").
+
+    Returns:
+        DataFrame: A Spark DataFrame with columns:
+            - Classification
+            - <name> : percentage (not rounded, raw value)
+    """
+    total = df.count()
+    return df.groupBy("Classification") \
+             .agg((count("*") / lit(total) * 100).alias(name))
+
+# 3. Process dataset function
+def process_dataset(spark, input_files, name):
+    """
+    Read parquet files, apply remapping, cache, and compute distribution.
+
+    Args:
+        spark (SparkSession): Active Spark session.
+        input_files (list): List of parquet files or folders to read.
+        name (str): Name of the dataset (used for distribution column).
+
+    Returns:
+        tuple:
+            - df (DataFrame): Transformed DataFrame (cached).
+            - dist (DataFrame): Distribution DataFrame with percentages.
+    """
+    df = spark.read.parquet(*input_files).select(*parq_cols)
+    df = remap_classification(df).cache()
+    dist = compute_distribution(df, name)
+    return df, dist
+
+
+#------------------------------------------------------
 # Main program
-# -------------------------
+#------------------------------------------------------
 def main(args):
-    
-    input_files = args.input
-    executor_mem = args.executor_mem
-    driver_mem = args.driver_mem
-    
-    print("\n==============< Program parameters >===============")
-    print("- input files= {}".format(input_files))
-    print("- executor memory= {}".format(executor_mem))
-    print("- driver memory= {}".format(driver_mem))
-    print("===================================================")
-    
-    # Create Spark session
+    # Spark session
     spark = (
         SparkSession.builder
-        .appName("Read and Remap FRACTAL files")
+        .appName("FRACTAL Pipeline")
         .config("spark.hadoop.fs.s3a.fast.upload", "true")
         .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
-        .config("spark.executor.memory", executor_mem)
-        .config("spark.driver.memory", driver_mem)
+        .config("spark.executor.memory", args.executor_mem)
+        .config("spark.driver.memory", args.driver_mem)
         .getOrCreate()
     )
-
     spark.sparkContext.setLogLevel("WARN")
-    
     taskmetrics = TaskMetrics(spark)
+
+    # Separate input files into datasets
+    train_files = [f for f in args.input if "train" in f.lower()]
+    test_files  = [f for f in args.input if "test" in f.lower()]
+    val_files   = [f for f in args.input if "val" in f.lower()]
     
-    # Columns to read
-    parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
-    
-    print("\n============< Loading and transforming data >============")
     taskmetrics.begin()
     
-
-    # Split input files by dataset
-    train_files = [f for f in input_files if "/train/" in f]
-    test_files  = [f for f in input_files if "/test/" in f]
-    val_files   = [f for f in input_files if "/val/" in f]
-
-    def load_and_remap(files):
-        if not files:
-            return None
-        df = spark.read.parquet(*files).select(*parq_cols)
-        df_remap = remap_classification(df, "Classification")
-        df_remap.cache()
-        df_remap.count()  # trigger caching
-        return df_remap
-
-    df_train = load_and_remap(train_files)
-    df_test  = load_and_remap(test_files)
-    df_val   = load_and_remap(val_files)
+    # Process each dataset
+    df_train, dist_train = process_dataset(spark, train_files, "train")
+    df_test, dist_test   = process_dataset(spark, test_files, "test")
+    df_val, dist_val     = process_dataset(spark, val_files, "val")
     
-    # Compute percentages per dataset
-    def get_percentage(df, name):
-        if df is None:
-            return None
-        total = df.count()
-        return df.groupBy("Classification")\
-                 .agg(spark_round((count("*") / lit(total) * 100), 2).alias(name))
-
-    dist_train = get_percentage(df_train, "Train")
-    dist_test  = get_percentage(df_test, "Test")
-    dist_val   = get_percentage(df_val, "Val")
+    # Combine distributions into one table
+    dist_all = dist_train.join(dist_test, "Classification", "full_outer") \
+        .join(dist_val, "Classification", "full_outer") \
+        .fillna(0)  # missing values as 0%
     
-    # Compute overall counts
-    df_all = df_train.unionByName(df_test).unionByName(df_val)
-    dist_count = df_all.groupBy("Classification").agg(count("*").alias("Count"))
-    
-
-    # Merge everything
-    dists = [dist_count, dist_train, dist_test, dist_val]
-    distribution_final = reduce(lambda a, b: a.join(b, "Classification", "outer"), dists)
-   
-    # Add class descriptions
+    # Add human-readable descriptions
     class_map = [
         (1, "Unclassified"),
         (2, "Ground"),
-        (3, "Vegetation"),
+        (3, "Vegetation "),
         (4, "Building"),
         (5, "Water"),
         (6, "Bridge"),
@@ -172,47 +173,43 @@ def main(args):
     ]
     df_map = spark.createDataFrame(class_map, ["Classification", "Description"])
 
-    distribution_final = (
-        distribution_final
-        .join(df_map, "Classification", "left")
-        .select("Classification", "Description", "Count", "Train", "Test", "Val")
-        .orderBy("Classification")
-    )
+    dist_all = dist_all.join(df_map, "Classification", "left") \
+                    .select(
+                        "Classification",
+                        "Description",
+                        spark_round("train", 2).alias("Train"),
+                        spark_round("test", 2).alias("Test"),
+                        spark_round("val", 2).alias("Val")
+                    ) \
+                    .orderBy("Classification")
     
     taskmetrics.end()
     print("\n============< Transformation statistics >============")
     taskmetrics.print_report()
-    print("\n=====================================================")
+    print("\n============< Classification Distribution >============")
+    dist_all.show(truncate=False)
     
-    # Show final distribution
-    print("\n============< Classification Distribution per Dataset >============")
-    distribution_final.show(truncate=False)
-    
-    # Unpersist when done
-    for df in [df_train, df_test, df_val]:
-        if df is not None:
-            df.unpersist()
-    
+    # Free memory
+    df_train.unpersist()
+    df_test.unpersist()
+    df_val.unpersist()
     spark.stop()
 
 
+#- -----------------------------------------------------
+# Command-line interface
+#-------------------------------------------------------
 if __name__ == "__main__":
-    
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="PySpark FRACTAL remapping program")
-    parser.add_argument("--input",
-                        required=False,
-                        nargs="+",  # allows multiple files or folders
-                        help="input file(s) or folder(s)",
-                        default=default_parq_files)
-    parser.add_argument("--executor-mem",
-                        required=False, 
-                        help="executor memory",
-                        default=default_executor_mem)
-    parser.add_argument("--driver-mem",
-                        required=False, 
-                        help="driver memory",
-                        default=default_driver_mem)
-    
+    parser = argparse.ArgumentParser(description="FRACTAL Pipeline:preprocessing")
+    parser.add_argument("--input", 
+                        nargs="+", 
+                        default=default_parq_files,
+                        help="Input files or folders (train/test/val)")
+    parser.add_argument("--executor-mem", 
+                        default=default_executor_mem,
+                        help="Executor memory for Spark")
+    parser.add_argument("--driver-mem", 
+                        default=default_driver_mem,
+                        help="Driver memory for Spark")
     args = parser.parse_args()
     main(args)
