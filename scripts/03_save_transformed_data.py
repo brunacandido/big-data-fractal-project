@@ -125,51 +125,69 @@ def main(args):
     df_test  = spark.read.parquet(*test_files).select(*parq_cols)
     df_val   = spark.read.parquet(*val_files).select(*parq_cols)
 
+    # ------------------------------
+    # computing distribution
+    # ------------------------------
+    dist_train_df = compute_distribution().transform(df_train)
+    dist_test_df  = compute_distribution().transform(df_test)
+    dist_val_df   = compute_distribution().transform(df_val)
+
+        # Combine distributions 
+    dist_all = dist_train_df.join(dist_test_df, "Classification", "full_outer") \
+                            .join(dist_val_df, "Classification", "full_outer") \
+                            .fillna(0)
+
+        # Add descriptions
+    class_map = [
+        (1, "Unclassified"),
+        (2, "Ground"),
+        (3, "Vegetation "),
+        (4, "Building"),
+        (5, "Water"),
+        (6, "Bridge"),
+        (7, "Permanent structures"),
+        (8, "Filtered/Artifacts")]
+    df_map = spark.createDataFrame(class_map, ["Classification", "Description"])
+    dist_all = dist_all.join(df_map, "Classification", "left") \
+                      .select(
+                          "Classification",
+                          "Description",
+                          spark_round("train", 2).alias("Train"),
+                          spark_round("test", 2).alias("Test"),
+                          spark_round("val", 2).alias("Val")
+                      ) \
+                      .orderBy("Classification")
+    
+    # print("\n============< Classification distribution >============")
+    # dist_all.show(truncate=False)
+
+    # --------------------------------------
     # Fit pipeline model
+    # --------------------------------------
     pipeline_model = data_pipeline.fit(df_train)
 
+    # --------------------------------------
     # Transform datasets
+    # --------------------------------------
     df_train = pipeline_model.transform(df_train)
     df_test  = pipeline_model.transform(df_test)
     df_val   = pipeline_model.transform(df_val)
 
+    # --------------------------------------
     # Select final columns
+    # --------------------------------------
     final_cols = ["x", "y", "z_norm", "Intensity", "Classification",
                   "Red", "Green", "Blue", "Infrared", "NDVI"]
     df_train_final = df_train.select(*final_cols)
     df_test_final  = df_test.select(*final_cols)
     df_val_final   = df_val.select(*final_cols)
 
+    # --------------------------------------
     # Save processed datasets
+    # --------------------------------------
     df_train_final.write.mode("overwrite").parquet("s3a://ubs-homes/erasmus/ethel/fractal/train")
     df_test_final.write.mode("overwrite").parquet("s3a://ubs-homes/erasmus/ethel/fractal/test")
     df_val_final.write.mode("overwrite").parquet("s3a://ubs-homes/erasmus/ethel/fractal/val")
-
-    # ------------------------------
-    # computing distribution
-    # ------------------------------
-    # dist_train_df = compute_distribution().transform(df_train)
-    # dist_test_df  = compute_distribution().transform(df_test)
-    # dist_val_df   = compute_distribution().transform(df_val)
-    # Combine distributions (commented, lazy)
-    # dist_all = dist_train_df.join(dist_test_df, "Classification", "full_outer") \
-    #                         .join(dist_val_df, "Classification", "full_outer") \
-    #                         .fillna(0)
-
-    # # Add descriptions
-    # class_map = [
-    #     (1, "Unclassified"),(2, "Ground"),(3, "Vegetation "),(4, "Building"),
-    #     (5, "Water"),(6, "Bridge"),(7, "Permanent structures"),(8, "Filtered/Artifacts")]
-    # df_map = spark.createDataFrame(class_map, ["Classification", "Description"])
-    # dist_all = dist_all.join(df_map, "Classification", "left") \
-    #                   .select(
-    #                       "Classification",
-    #                       "Description",
-    #                       spark_round("train", 2).alias("Train"),
-    #                       spark_round("test", 2).alias("Test"),
-    #                       spark_round("val", 2).alias("Val")
-    #                   ) \
-    #                   .orderBy("Classification")
 
     taskmetrics.end()
     print("\n============< Transformation statistics >============")
@@ -177,7 +195,8 @@ def main(args):
 
     spark.stop()
 
-# -----------------------------------------------------
+
+# -------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FRACTAL Pipeline: preprocessing")
     parser.add_argument("--input",
