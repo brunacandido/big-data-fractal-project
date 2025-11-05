@@ -12,6 +12,7 @@ import argparse
 # -------------------------------------------------------
 # Default arguments
 # -------------------------------------------------------
+# list of the data folders in s3 bucket
 default_parq_files = [
     "s3a://ubs-datasets/FRACTAL/data/train/",
     "s3a://ubs-datasets/FRACTAL/data/test/",
@@ -25,6 +26,7 @@ parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infr
 # -------------------------------------------------------
 # Preprocessing Transformers
 # -------------------------------------------------------
+# Transformer to remap the 'Classification' column
 class remap_classification(Transformer):
     def _transform(self, df):
         """
@@ -52,6 +54,7 @@ class remap_classification(Transformer):
             .otherwise(None)
         )
 
+# Transformer to normalize height
 class normalize_height(Transformer):
     """
     Normalize the height (z-coordinate) by subtracting the minimum z value.
@@ -64,6 +67,7 @@ class normalize_height(Transformer):
         df = df.withColumn("z_norm", col("z") - lit(min_z))
         return df
 
+# Transformer to compute NDVI
 class compute_ndvi(Transformer):
     """
     Compute the Normalized Difference Vegetation Index (NDVI) for the DataFrame.
@@ -78,6 +82,7 @@ class compute_ndvi(Transformer):
         )
         return df
 
+# Transformer to compute classification distribution
 class compute_distribution(Transformer):
     """
     Compute the percentage distribution of 'Classification' column in the DataFrame.
@@ -126,8 +131,11 @@ def main(args):
     df_val   = spark.read.parquet(*val_files).select(*parq_cols)
 
     # ------------------------------
-    # computing distribution
+    # computing distribution of the land cover classification
     # ------------------------------
+    # transformation is separate from the main pipeline because we wanted to just check classification distribution to
+    # understand the distribution of the classification before and after remapping which would inform the fraction splitting
+    # applied during the speed up phase.
     dist_train_df = compute_distribution().transform(df_train)
     dist_test_df  = compute_distribution().transform(df_test)
     dist_val_df   = compute_distribution().transform(df_val)
@@ -162,19 +170,19 @@ def main(args):
     # dist_all.show(truncate=False)
 
     # --------------------------------------
-    # Fit pipeline model
+    # Fit pipeline of transformations
     # --------------------------------------
     pipeline_model = data_pipeline.fit(df_train)
 
     # --------------------------------------
-    # Transform datasets
+    # Transform all datasets
     # --------------------------------------
     df_train = pipeline_model.transform(df_train)
     df_test  = pipeline_model.transform(df_test)
     df_val   = pipeline_model.transform(df_val)
 
     # --------------------------------------
-    # Select final columns
+    # Select final features to save
     # --------------------------------------
     final_cols = ["x", "y", "z_norm", "Intensity", "Classification",
                   "Red", "Green", "Blue", "Infrared", "NDVI"]
@@ -183,7 +191,7 @@ def main(args):
     df_val_final   = df_val.select(*final_cols)
 
     # --------------------------------------
-    # Save processed datasets
+    # Save processed datasets to s3 bucket ready for model training
     # --------------------------------------
     df_train_final.write.mode("overwrite").parquet("s3a://ubs-homes/erasmus/ethel/fractal/train")
     df_test_final.write.mode("overwrite").parquet("s3a://ubs-homes/erasmus/ethel/fractal/test")
