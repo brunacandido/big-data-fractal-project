@@ -4,60 +4,29 @@
 # last update: 2025/11/04
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, count, lit, round as spark_round
+from pyspark.sql.functions import col, when, count, lit, round as spark_round, min
+from pyspark.sql.window import Window
 from sparkmeasure import TaskMetrics
 import argparse
 
 # -------------------------------------------------------
 # Default arguments
 # -------------------------------------------------------
-# local testing
+#  # cluster files
 default_parq_files = [
-    # from TRAIN
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955257.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955299.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955400.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955533.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210500.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210515.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210520.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210573.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210596.parquet",
-    # from TEST
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325248.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325312.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325319.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325374.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325394.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325525.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103610.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103656.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103675.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103798.parquet",
-    # from VAL
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6406-003134108.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6407-002561599.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6408-002409795.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6411-002310826.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6411-002310834.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6413-003295466.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6415-002578342.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6416-003028668.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6417-002457489.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6420-002760111.parquet"
+    "s3a://ubs-datasets/FRACTAL/data/train/",
+    "s3a://ubs-datasets/FRACTAL/data/test/",
+    "s3a://ubs-datasets/FRACTAL/data/val/"
 ]
-
-# cluster files
-# default_parq_files = [
-#     "s3a://ubs-datasets/FRACTAL/data/train/",
-#     "s3a://ubs-datasets/FRACTAL/data/test/",
-#     "s3a://ubs-datasets/FRACTAL/data/val/"
-# ]
 
 default_executor_mem = "4g"
 default_driver_mem = "4g"
 parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
+
+# -------------------------------------------------------
+# Preprocessing functions
+# -------------------------------------------------------
 # 1. Remapping function
 def remap_classification(df):
     """
@@ -105,10 +74,57 @@ def compute_distribution(df, name):
     return df.groupBy("Classification") \
              .agg((count("*") / lit(total) * 100).alias(name))
 
-# 3. Process dataset function
+# 3. normalize height
+def normalize_height(df):
+    """
+    Normalize the height (z-coordinate) by subtracting the minimum z value.
+
+    Args:
+        df (DataFrame): Input Spark DataFrame with 'xyz' column.
+
+    Returns:
+        DataFrame: DataFrame with additional 'z_norm' column.
+    """
+    # getting all the coordinates in separate columns
+    df_norm = df.withColumn("x", col("xyz")[0]) \
+        .withColumn("y", col("xyz")[1]) \
+        .withColumn("z", col("xyz")[2])
+
+    # normalizing height (z) by subtracting the minimum value
+    min_z = df_norm.agg(min("z").alias("min_z")).collect()[0]["min_z"]
+    df_norm = df_norm.withColumn("z_norm", col("z") - lit(min_z))
+    return df_norm
+
+# 4. compute NDVI
+def compute_ndvi(df, nir_col="Infrared", red_col="Red"):
+    """
+    Compute NDVI (Normalized Difference Vegetation Index).
+    NDVI = (NIR - Red) / (NIR + Red)
+    Parameters:
+        df : pyspark.sql.DataFrame
+            Input dataframe with NIR and Red columns.
+        nir_col : str
+            Column name for Near Infrared band.
+        red_col : str
+            Column name for Red band.
+    Returns:
+        df_ndvi : pyspark.sql.DataFrame
+            Original dataframe with added NDVI column.
+    """
+    df_ndvi = df.withColumn(
+        "NDVI",
+        when(
+            (col(nir_col) + col(red_col)) != 0,
+            (col(nir_col) - col(red_col)) / (col(nir_col) + col(red_col))
+        ).otherwise(None)
+    )
+    return df_ndvi
+
+
+# Process dataset function
 def process_dataset(spark, input_files, name):
     """
-    Read parquet files, apply remapping, cache, and compute distribution.
+    apply all defined preprocessing functions
 
     Args:
         spark (SparkSession): Active Spark session.
@@ -121,14 +137,14 @@ def process_dataset(spark, input_files, name):
             - dist (DataFrame): Distribution DataFrame with percentages.
     """
     df = spark.read.parquet(*input_files).select(*parq_cols)
-    df = remap_classification(df).cache()
+    df = remap_classification(df)
+    df = normalize_height(df)
     dist = compute_distribution(df, name)
     return df, dist
 
-
-#------------------------------------------------------
+# ------------------------------------------------------
 # Main program
-#------------------------------------------------------
+# ------------------------------------------------------
 def main(args):
     # Spark session
     spark = (
@@ -154,7 +170,7 @@ def main(args):
     df_train, dist_train = process_dataset(spark, train_files, "train")
     df_test, dist_test   = process_dataset(spark, test_files, "test")
     df_val, dist_val     = process_dataset(spark, val_files, "val")
-    
+
     # Combine distributions into one table
     dist_all = dist_train.join(dist_test, "Classification", "full_outer") \
         .join(dist_val, "Classification", "full_outer") \
@@ -186,8 +202,8 @@ def main(args):
     taskmetrics.end()
     print("\n============< Transformation statistics >============")
     taskmetrics.print_report()
-    print("\n============< Classification Distribution >============")
-    dist_all.show(truncate=False)
+    # print("\n============< Classification Distribution >============")
+    # dist_all.show(truncate=False)
     
     # Free memory
     df_train.unpersist()
@@ -196,9 +212,7 @@ def main(args):
     spark.stop()
 
 
-#- -----------------------------------------------------
-# Command-line interface
-#-------------------------------------------------------
+# -----------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FRACTAL Pipeline:preprocessing")
     parser.add_argument("--input", 
