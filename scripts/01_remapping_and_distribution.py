@@ -74,52 +74,6 @@ def compute_distribution(df, name):
     return df.groupBy("Classification") \
              .agg((count("*") / lit(total) * 100).alias(name))
 
-# 3. normalize height
-def normalize_height(df):
-    """
-    Normalize the height (z-coordinate) by subtracting the minimum z value.
-
-    Args:
-        df (DataFrame): Input Spark DataFrame with 'xyz' column.
-
-    Returns:
-        DataFrame: DataFrame with additional 'z_norm' column.
-    """
-    # getting all the coordinates in separate columns
-    df_norm = df.withColumn("x", col("xyz")[0]) \
-        .withColumn("y", col("xyz")[1]) \
-        .withColumn("z", col("xyz")[2])
-
-    # normalizing height (z) by subtracting the minimum value
-    min_z = df_norm.agg(min("z").alias("min_z")).collect()[0]["min_z"]
-    df_norm = df_norm.withColumn("z_norm", col("z") - lit(min_z))
-    return df_norm
-
-# 4. compute NDVI
-def compute_ndvi(df, nir_col="Infrared", red_col="Red"):
-    """
-    Compute NDVI (Normalized Difference Vegetation Index).
-    NDVI = (NIR - Red) / (NIR + Red)
-    Parameters:
-        df : pyspark.sql.DataFrame
-            Input dataframe with NIR and Red columns.
-        nir_col : str
-            Column name for Near Infrared band.
-        red_col : str
-            Column name for Red band.
-    Returns:
-        df_ndvi : pyspark.sql.DataFrame
-            Original dataframe with added NDVI column.
-    """
-    df_ndvi = df.withColumn(
-        "NDVI",
-        when(
-            (col(nir_col) + col(red_col)) != 0,
-            (col(nir_col) - col(red_col)) / (col(nir_col) + col(red_col))
-        ).otherwise(None)
-    )
-    return df_ndvi
-
 
 # Process dataset function
 def process_dataset(spark, input_files, name):
@@ -138,7 +92,6 @@ def process_dataset(spark, input_files, name):
     """
     df = spark.read.parquet(*input_files).select(*parq_cols)
     df = remap_classification(df)
-    df = normalize_height(df)
     dist = compute_distribution(df, name)
     return df, dist
 
@@ -202,8 +155,8 @@ def main(args):
     taskmetrics.end()
     print("\n============< Transformation statistics >============")
     taskmetrics.print_report()
-    # print("\n============< Classification Distribution >============")
-    # dist_all.show(truncate=False)
+    print("\n============< Classification Distribution >============")
+    dist_all.show(truncate=False)
     
     # Free memory
     df_train.unpersist()

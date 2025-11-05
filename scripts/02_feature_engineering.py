@@ -16,39 +16,19 @@ import argparse
 default_parq_files = [
     # from TRAIN
     "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955257.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955299.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955400.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955533.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210500.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210515.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210520.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210573.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6400-002210596.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955299.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/train/TRAIN-0436_6399-002955400.parquet",
     # from TEST
     "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325248.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325312.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325319.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325374.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325394.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325525.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103610.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103656.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103675.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6385-003103798.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325312.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/test/TEST-0436_6384-002325319.parquet",
     # from VAL
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6406-003134108.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6407-002561599.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6408-002409795.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6411-002310826.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6411-002310834.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6413-003295466.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6415-002578342.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6416-003028668.parquet",
-    # "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6417-002457489.parquet",
-    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6420-002760111.parquet"
+    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6406-003134108.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6407-002561599.parquet",
+    "s3a://ubs-datasets/FRACTAL/data/val/VAL-0436_6408-002409795.parquet"
 ]
 
-
+# full dataset
 # default_parq_files = [
 #     "s3a://ubs-datasets/FRACTAL/data/train/",
 #     "s3a://ubs-datasets/FRACTAL/data/test/",
