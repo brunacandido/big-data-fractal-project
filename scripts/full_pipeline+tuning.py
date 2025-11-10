@@ -120,14 +120,14 @@ def main(args):
     # Land cover class distribution
     # ---------------------------
     # uncomment to run the distribution of the land cover classes
-    print("\n============< Land Cover Class Distribution >============")
-    dist_train = ComputeDistribution().transform(df_train)
-    dist_val   = ComputeDistribution().transform(df_val)
-    dist_test  = ComputeDistribution().transform(df_test)
-    dist_all = dist_train.join(dist_val, "Classification", "full_outer") \
-                         .join(dist_test, "Classification", "full_outer") \
-                         .fillna(0)
-    dist_all.show(truncate=False)
+    # print("\n============< Land Cover Class Distribution >============")
+    # dist_train = ComputeDistribution().transform(df_train)
+    # dist_val   = ComputeDistribution().transform(df_val)
+    # dist_test  = ComputeDistribution().transform(df_test)
+    # dist_all = dist_train.join(dist_val, "Classification", "full_outer") \
+    #                      .join(dist_test, "Classification", "full_outer") \
+    #                      .fillna(0)
+    # dist_all.show(truncate=False)
 
     # ---------------------------
     # Preprocessing pipeline (fit once)
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     parser.add_argument("--executor-cores", default=default_executor_cores)
     parser.add_argument("--sample-fraction", type=float, default=0.01,
                         help="Fraction of dataset to sample (0 < fraction <= 1.0)")
-    parser.add_argument("--num-executors", type=int, default=None,
+    parser.add_argument("--num-executors", type=int, default=4,
                         help="Optional: Number of Spark executors to use")
     args = parser.parse_args()
     main(args)
@@ -239,4 +239,18 @@ if __name__ == "__main__":
 # num of executors  16 , 32, 64   with 16 nodes of cluster
 # num of executors  8 , 16, 32   with 8 nodes of cluster
 # num of cores  6, 3, 1
-# memory per executor  28g, 14g, 7g
+# memory per executor  20g, 14g, 7g
+
+# spark-submit \
+#   --master yarn \
+#   --deploy-mode cluster \
+#   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
+#   full_pipeline.py \
+#     --input s3a://ubs-datasets/FRACTAL/data/train/ \
+#             s3a://ubs-datasets/FRACTAL/data/val/ \
+#             s3a://ubs-datasets/FRACTAL/data/test/ \
+#     --executor-mem 10g \
+#     --driver-mem 12g \
+#     --executor-cores 5 \
+#     --num-executors 8 \
+#     --sample-fraction 0.01
