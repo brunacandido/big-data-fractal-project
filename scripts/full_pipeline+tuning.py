@@ -11,6 +11,9 @@ from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from sparkmeasure import TaskMetrics
 import argparse
 
+# to run  on cluster
+# spark-submit --master yarn --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 full_pipeline.py --num-executors 2 --sample-fraction 0.01
+
 # ---------------------------
 # Preprocessing Transformers
 # ---------------------------
@@ -64,6 +67,7 @@ default_parq_files = [
 
 default_executor_mem = "4g"
 default_driver_mem = "4g"
+default_executor_cores = "2"
 
 parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
@@ -71,17 +75,27 @@ parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infr
 # Main
 # ---------------------------
 def main(args):
-    builder = (
-        SparkSession.builder
-        .appName("FRACTAL ML Pipeline ")
-        .config("spark.hadoop.fs.s3a.fast.upload", "true")
-        .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
-        .config("spark.executor.memory", args.executor_mem)
-        .config("spark.driver.memory", args.driver_mem)
+    spark = (
+    SparkSession.builder
+    .appName(f'Fractal: {args.sample_fraction} and n_executor: {args.num_executors}')
+    .config('spark.executor.instances', args.num_executors)
+    .config('spark.executor.memory', args.executor_mem)
+    .config('spark.driver.memory', args.driver_mem)
+    .config('spark.executor.cores', args.executor_cores)
+    .config("spark.yarn.executor.memoryOverhead", "8g")
+    .config("spark.yarn.driver.memoryOverhead", "6g")
+    .config('spark.sql.shuffle.partitions', '256')
+    .config('spark.sql.autoBroadcastJoinThreshold', '20m')
+    .config('spark.dynamicAllocation.enabled', 'false')
+    .config('spark.speculation', 'true')
+    .config("spark.hadoop.fs.s3a.threads.max", "32")
+    .config("spark.hadoop.fs.s3a.connection.maximum", "32")
+    .config("spark.hadoop.fs.s3a.fast.upload", "true")
+    .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
+    .config("spark.hadoop.fs.s3a.block.size", "33554432")
+    .config("spark.sql.files.maxPartitionBytes", "134217728")
+    .getOrCreate()
     )
-    if args.num_executors:
-        builder = builder.config("spark.executor.instances", args.num_executors)
-    spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     taskmetrics = TaskMetrics(spark)
     taskmetrics.begin()
@@ -101,19 +115,19 @@ def main(args):
     df_train = df_train.sample(False, args.sample_fraction, seed=42)
     df_val   = df_val.sample(False, args.sample_fraction, seed=42)
     df_test  = df_test.sample(False, args.sample_fraction, seed=42)
-
+    
     # ---------------------------
     # Land cover class distribution
     # ---------------------------
-    # uncomment to run th edistribution o fteh land cover classes
-    # print("\n============< Land Cover Class Distribution >============")
-    # dist_train = ComputeDistribution().transform(df_train)
-    # dist_val   = ComputeDistribution().transform(df_val)
-    # dist_test  = ComputeDistribution().transform(df_test)
-    # dist_all = dist_train.join(dist_val, "Classification", "full_outer") \
-    #                      .join(dist_test, "Classification", "full_outer") \
-    #                      .fillna(0)
-    # dist_all.show(truncate=False)
+    # uncomment to run the distribution of the land cover classes
+    print("\n============< Land Cover Class Distribution >============")
+    dist_train = ComputeDistribution().transform(df_train)
+    dist_val   = ComputeDistribution().transform(df_val)
+    dist_test  = ComputeDistribution().transform(df_test)
+    dist_all = dist_train.join(dist_val, "Classification", "full_outer") \
+                         .join(dist_test, "Classification", "full_outer") \
+                         .fillna(0)
+    dist_all.show(truncate=False)
 
     # ---------------------------
     # Preprocessing pipeline (fit once)
@@ -137,7 +151,7 @@ def main(args):
     # ---------------------------
     # RandomForest hyperparameter tuning on val set
     # ---------------------------
-    num_trees   = [50, 100, 150]
+    num_trees   = [10, 20, 30]
     best_acc    = 0
     best_params = {}
 
@@ -153,7 +167,8 @@ def main(args):
             labelCol="Classification",
             featuresCol="features",
             seed=42,
-            numTrees=n
+            numTrees=n,
+            max_depth=5
         )
         model = rf.fit(df_train)  
         val_pred = model.transform(df_val)
@@ -173,7 +188,8 @@ def main(args):
         labelCol="Classification",
         featuresCol="features",
         seed=42,
-        **best_params
+        **best_params,
+        max_depth=5
     )
     final_model = opt_rf.fit(df_train)
 
@@ -212,6 +228,7 @@ if __name__ == "__main__":
     parser.add_argument("--input", nargs="+", default=default_parq_files, help="Input parquet files")
     parser.add_argument("--executor-mem", default=default_executor_mem)
     parser.add_argument("--driver-mem", default=default_driver_mem)
+    parser.add_argument("--executor-cores", default=default_executor_cores)
     parser.add_argument("--sample-fraction", type=float, default=0.01,
                         help="Fraction of dataset to sample (0 < fraction <= 1.0)")
     parser.add_argument("--num-executors", type=int, default=None,
@@ -219,3 +236,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(args)
 
+# num of executors  16 , 32, 64   with 16 nodes of cluster
+# num of executors  8 , 16, 32   with 8 nodes of cluster
+# num of cores  6, 3, 1
+# memory per executor  28g, 14g, 7g
