@@ -1,5 +1,4 @@
-# BIG DATA 
-# FRACTAL pipeline: remap classification, compute features, save selected columns
+# BIG DATA - Scaling ML using FRACTAL
 # Bruna Cândido ; Ethel Ogallo
 # last update: 2025/11/10
 
@@ -11,6 +10,10 @@ from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from sparkmeasure import TaskMetrics
 import argparse
+
+
+# To run the script:
+# spark-submit -master yarn --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 --num-executors 4 full_pipeline+tuning.py --sample-fraction 0.01
 
 # ---------------------------
 # Preprocessing Transformers
@@ -65,6 +68,7 @@ default_parq_files = [
 
 default_executor_mem = "4g"
 default_driver_mem = "4g"
+
 parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
 # ---------------------------
@@ -80,6 +84,8 @@ def main(args):
         .config("spark.driver.memory", args.driver_mem)
         .getOrCreate()
     )
+    if args.num_executors:
+        spark = spark.config("spark.executor.instances", args.num_executors)
     spark.sparkContext.setLogLevel("WARN")
     taskmetrics = TaskMetrics(spark)
     taskmetrics.begin()
@@ -135,31 +141,37 @@ def main(args):
     # Hyperparameter tuning using val set
     # ---------------------------
     num_trees = [50, 100, 150]
+    max_depths = [5, 10, 15]   # new hyperparameter
     best_acc = 0
-    best_num_trees = None
-    evaluator = MulticlassClassificationEvaluator(labelCol="Classification", 
-                                                  predictionCol="prediction", 
-                                                  metricName="accuracy")
-    
+    best_params = {}
+
+    evaluator = MulticlassClassificationEvaluator(
+        labelCol="Classification",
+        predictionCol="prediction",
+        metricName="accuracy"
+    )
+
     print("\n============< Validation Accuracy >============")
     for n in num_trees:
-        rf.setParams(numTrees=n)          # adjust RF param
-        model = pipeline.fit(df_train)    # fit on train only
-        val_pred = model.transform(df_val)
-        acc = evaluator.evaluate(val_pred)
-        print(f"Validation accuracy for numTrees={n}: {acc:.4f}")
-        if acc > best_acc:
-            best_acc = acc
-            best_num_trees = n
+        for d in max_depths:
+            rf.setParams(numTrees=n, maxDepth=d)
+            model = pipeline.fit(df_train)
+            val_pred = model.transform(df_val)
+            acc = evaluator.evaluate(val_pred)
+            print(f"Validation accuracy for numTrees={n}, maxDepth={d}: {acc:.4f}")
+            if acc > best_acc:
+                best_acc = acc
+                best_params = {"numTrees": n, "maxDepth": d}
 
     print("\n============< Best parameters >============")
-    print(f"\n Best numTrees = {best_num_trees} with val accuracy = {best_acc:.4f}")
+    print(f"Best params: numTrees={best_params['numTrees']}, maxDepth={best_params['maxDepth']} with val accuracy = {best_acc:.4f}")
 
     # ---------------------------
-    # Refit final pipeline on train + val
+    # Refit final pipeline on train 
     # ---------------------------
-    rf.setParams(numTrees=best_num_trees)
-    final_model = pipeline.fit(df_train)  # refit pipeline on train
+    # Refit final pipeline
+    rf.setParams(**best_params)
+    final_model = pipeline.fit(df_train)
 
     # ---------------------------
     # Predict on test set
@@ -197,6 +209,8 @@ if __name__ == "__main__":
     parser.add_argument("--driver-mem", default=default_driver_mem)
     parser.add_argument("--sample-fraction", type=float, default=0.01,
                         help="Fraction of dataset to sample (0 < fraction <= 1.0)")
+    parser.add_argument("--num-executors", type=int, default=None,
+                    help="Optional: Number of Spark executors to use")
     args = parser.parse_args()
     main(args)
 
