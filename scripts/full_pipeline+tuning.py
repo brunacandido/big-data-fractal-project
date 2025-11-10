@@ -1,4 +1,4 @@
-# BIG DATA - Scaling ML using FRACTAL
+# BIG DATA - Scaling ML workflow with spark using FRACTAL dataset
 # Bruna Cândido ; Ethel Ogallo
 # last update: 2025/11/10
 
@@ -10,10 +10,6 @@ from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from sparkmeasure import TaskMetrics
 import argparse
-
-
-# To run the script:
-# spark-submit -master yarn --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 --num-executors 4 full_pipeline+tuning.py --sample-fraction 0.01
 
 # ---------------------------
 # Preprocessing Transformers
@@ -56,14 +52,14 @@ class ComputeDistribution(Transformer):
         total = df.count()
         return df.groupBy("Classification") \
                  .agg((count("*") / lit(total) * 100).alias("Percentage"))
-    
+
 # ---------------------------
 # Default arguments
 # ---------------------------
 default_parq_files = [
-    "s3a://ubs-homes/erasmus/ethel/fractal/train/",
-    "s3a://ubs-homes/erasmus/ethel/fractal/test/",
-    "s3a://ubs-homes/erasmus/ethel/fractal/val/"
+    "s3a://ubs-datasets/FRACTAL/data/train/",
+    "s3a://ubs-datasets/FRACTAL/data/test/",
+    "s3a://ubs-datasets/FRACTAL/data/val/"
 ]
 
 default_executor_mem = "4g"
@@ -75,17 +71,17 @@ parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infr
 # Main
 # ---------------------------
 def main(args):
-    spark = (
+    builder = (
         SparkSession.builder
-        .appName("FRACTAL ML Pipeline - Single Reusable Pipeline")
+        .appName("FRACTAL ML Pipeline ")
         .config("spark.hadoop.fs.s3a.fast.upload", "true")
         .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
         .config("spark.executor.memory", args.executor_mem)
         .config("spark.driver.memory", args.driver_mem)
-        .getOrCreate()
     )
     if args.num_executors:
-        spark = spark.config("spark.executor.instances", args.num_executors)
+        builder = builder.config("spark.executor.instances", args.num_executors)
+    spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     taskmetrics = TaskMetrics(spark)
     taskmetrics.begin()
@@ -94,8 +90,8 @@ def main(args):
     # Load datasets and sample fraction
     # ---------------------------
     train_files = [f for f in args.input if "train" in f.lower()]
-    val_files = [f for f in args.input if "val" in f.lower()]
-    test_files = [f for f in args.input if "test" in f.lower()]
+    val_files   = [f for f in args.input if "val" in f.lower()]
+    test_files  = [f for f in args.input if "test" in f.lower()]
 
     df_train = spark.read.parquet(*train_files).select(*parq_cols)
     df_val   = spark.read.parquet(*val_files).select(*parq_cols)
@@ -103,25 +99,24 @@ def main(args):
 
     # sample fraction
     df_train = df_train.sample(False, args.sample_fraction, seed=42)
-    df_val = df_val.sample(False, args.sample_fraction, seed=42)
-    df_test = df_test.sample(False, args.sample_fraction, seed=42)
+    df_val   = df_val.sample(False, args.sample_fraction, seed=42)
+    df_test  = df_test.sample(False, args.sample_fraction, seed=42)
 
     # ---------------------------
-    # land cover class distribution
+    # Land cover class distribution
     # ---------------------------
-    # Uncomment the lines below to see the distribution of land cover classes
+    # uncomment to run th edistribution o fteh land cover classes
+    # print("\n============< Land Cover Class Distribution >============")
     # dist_train = ComputeDistribution().transform(df_train)
     # dist_val   = ComputeDistribution().transform(df_val)
     # dist_test  = ComputeDistribution().transform(df_test)
-    #
     # dist_all = dist_train.join(dist_val, "Classification", "full_outer") \
     #                      .join(dist_test, "Classification", "full_outer") \
     #                      .fillna(0)
     # dist_all.show(truncate=False)
 
-
     # ---------------------------
-    # Define pipeline 
+    # Preprocessing pipeline (fit once)
     # ---------------------------
     assembler = VectorAssembler(
         inputCols=["x","y","z_norm","Intensity","Red","Green","Blue","Infrared","NDVI"],
@@ -129,20 +124,21 @@ def main(args):
         handleInvalid="skip"
     )
 
-    rf = RandomForestClassifier(labelCol="Classification", featuresCol="features", seed=42)
-    
-    pipeline = Pipeline(stages=[RemapClassification(), 
-                                NormalizeHeight(), 
-                                ComputeNDVI(), 
-                                assembler, 
-                                rf])
-    
+    data_pipeline = Pipeline(stages=[RemapClassification(), 
+                                     NormalizeHeight(), 
+                                     ComputeNDVI(), 
+                                     assembler])
+    fit_pipeline = data_pipeline.fit(df_train)  # fit once on train
+
+    df_train = fit_pipeline.transform(df_train)
+    df_val   = fit_pipeline.transform(df_val)
+    df_test  = fit_pipeline.transform(df_test)
+
     # ---------------------------
-    # Hyperparameter tuning using val set
+    # RandomForest hyperparameter tuning on val set
     # ---------------------------
-    num_trees = [50, 100, 150]
-    max_depths = [5, 10, 15]   # new hyperparameter
-    best_acc = 0
+    num_trees   = [50, 100, 150]
+    best_acc    = 0
     best_params = {}
 
     evaluator = MulticlassClassificationEvaluator(
@@ -153,39 +149,48 @@ def main(args):
 
     print("\n============< Validation Accuracy >============")
     for n in num_trees:
-        for d in max_depths:
-            rf.setParams(numTrees=n, maxDepth=d)
-            model = pipeline.fit(df_train)
-            val_pred = model.transform(df_val)
-            acc = evaluator.evaluate(val_pred)
-            print(f"Validation accuracy for numTrees={n}, maxDepth={d}: {acc:.4f}")
-            if acc > best_acc:
-                best_acc = acc
-                best_params = {"numTrees": n, "maxDepth": d}
+        rf = RandomForestClassifier(
+            labelCol="Classification",
+            featuresCol="features",
+            seed=42,
+            numTrees=n
+        )
+        model = rf.fit(df_train)  
+        val_pred = model.transform(df_val)
+        acc = evaluator.evaluate(val_pred)
+        print(f"Validation accuracy for numTrees={n}: {acc:.4f}")
+        if acc > best_acc:
+            best_acc = acc
+            best_params = {"numTrees": n}
 
     print("\n============< Best parameters >============")
-    print(f"Best params: numTrees={best_params['numTrees']}, maxDepth={best_params['maxDepth']} with val accuracy = {best_acc:.4f}")
+    print(f"Best params: numTrees={best_params['numTrees']} with val accuracy = {best_acc:.4f}")
 
     # ---------------------------
-    # Refit final pipeline on train 
+    # Refit final RF model with best parameters on train set
     # ---------------------------
-    # Refit final pipeline
-    rf.setParams(**best_params)
-    final_model = pipeline.fit(df_train)
+    opt_rf = RandomForestClassifier(
+        labelCol="Classification",
+        featuresCol="features",
+        seed=42,
+        **best_params
+    )
+    final_model = opt_rf.fit(df_train)
+
 
     # ---------------------------
     # Predict on test set
     # ---------------------------
     test_pred = final_model.transform(df_test)
 
-    evaluator_f1 = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="f1")
+    evaluator_f1        = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="f1")
     evaluator_precision = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="weightedPrecision")
-    evaluator_recall = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="weightedRecall")
+    evaluator_recall    = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="weightedRecall")
 
-    acc_test = evaluator.evaluate(test_pred)
-    f1_test = evaluator_f1.evaluate(test_pred)
-    precision_test = evaluator_precision.evaluate(test_pred)
-    recall_test = evaluator_recall.evaluate(test_pred)
+    acc_test       = evaluator.evaluate(test_pred)
+    f1_test        = evaluator_f1.evaluate(test_pred)
+    precision_test  = evaluator_precision.evaluate(test_pred)
+    recall_test     = evaluator_recall.evaluate(test_pred)
 
     print("\n============< Test Set Metrics >============")
     print(f"Accuracy : {acc_test:.4f}")
@@ -210,7 +215,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample-fraction", type=float, default=0.01,
                         help="Fraction of dataset to sample (0 < fraction <= 1.0)")
     parser.add_argument("--num-executors", type=int, default=None,
-                    help="Optional: Number of Spark executors to use")
+                        help="Optional: Number of Spark executors to use")
     args = parser.parse_args()
     main(args)
 
