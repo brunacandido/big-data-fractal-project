@@ -96,9 +96,9 @@ def main(args):
     val_files   = [f for f in args.input if "val" in f.lower()]
     test_files  = [f for f in args.input if "test" in f.lower()]
 
-    df_train = spark.read.option("mergeSchema", "true").parquet(*train_files).select(*parq_cols)
-    df_val   = spark.read.option("mergeSchema", "true").parquet(*val_files).select(*parq_cols)
-    df_test  = spark.read.option("mergeSchema", "true").parquet(*test_files).select(*parq_cols)
+    df_train = spark.read.parquet(*train_files).select(*parq_cols)
+    df_val   = spark.read.parquet(*val_files).select(*parq_cols)
+    df_test  = spark.read.parquet(*test_files).select(*parq_cols)
 
     # Sample fraction
     df_train = df_train.sample(False, args.sample_fraction, seed=42)
