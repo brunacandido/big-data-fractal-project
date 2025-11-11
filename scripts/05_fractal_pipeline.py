@@ -80,7 +80,7 @@ def load_sample(spark, path, fraction, cols):
 def main(args):
     spark = (
         SparkSession.builder
-        .appName(f'Fractal: {args.sample_fraction}')
+        .appName(f'Fractal: frac={args.sample_fraction} exec={args.num_executors}')
         .config('spark.executor.instances', args.num_executors)
         .config('spark.executor.memory', args.executor_mem)
         .config('spark.driver.memory', args.driver_mem)
@@ -93,7 +93,7 @@ def main(args):
                 "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
         .config("spark.driver.maxResultSize", "512m")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-        .config("spark.sql.shuffle.partitions", str(args.executor_cores * args.num_executors * 4))  
+        .config("spark.sql.shuffle.partitions", str(args.num_executors * args.executor_cores * 4))
         .config("spark.sql.files.maxPartitionBytes", "268435456")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728")
@@ -123,11 +123,12 @@ def main(args):
     df_val   = load_sample(spark, val_path,   args.sample_fraction, parq_cols)
     df_test  = load_sample(spark, test_path,  args.sample_fraction, parq_cols)
 
-    repart_num = args.num_executors * args.executor_cores
-    df_train = df_train.repartition(repart_num)
-    df_val   = df_val.repartition(repart_num)
-    df_test  = df_test.repartition(repart_num)
-    print(f"Data repartitioned to {repart_num} partitions")
+    # === REPARTITION: 4 partitions per task slot ===
+    repartitions = args.num_executors * args.executor_cores * 4
+    df_train = df_train.repartition(repartitions)
+    df_val   = df_val.repartition(repartitions)
+    df_test  = df_test.repartition(repartitions)
+    print(f"[INFO] Data repartitioned to {repartitions} partitions ")
 
     # ----------------------------------------------------------------------
     # Preprocessing Pipeline
@@ -181,7 +182,6 @@ def main(args):
                                          maxDepth=5).fit(df_train)
     
     test_acc = evaluator.evaluate(final_model.transform(df_test))
-
     print(f"\nTEST ACCURACY: {test_acc:.4f}")
 
     taskmetrics.end()
@@ -213,7 +213,9 @@ def main(args):
                     Exec Memory: {args.executor_mem}
                     Driver Memory: {args.driver_mem}
                     Sample Fraction: {args.sample_fraction}
-                    Shuffle Partitions: {args.executor_cores * args.num_executors * 4}
+                    Total Cores: {args.num_executors * args.executor_cores * 4}
+                    Shuffle Partitions: {args.num_executors * args.executor_cores}
+                    Data Partitions: {args.num_executors * args.executor_cores}
 
                     --- RESULTS ---
                     Test Accuracy: {test_acc:.4f}
@@ -241,11 +243,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--input", nargs="+", required=True,
                         help="train_path val_path test_path")
-    parser.add_argument("--executor-mem", default="4g", help="e.g. 20g")
-    parser.add_argument("--driver-mem", default="4g", help="e.g. 20g")
-    parser.add_argument("--executor-cores", type=int, default=2)
-    parser.add_argument("--num-executors", type=int, default=4)
-    parser.add_argument("--sample-fraction", type=float, default=0.01)
+    parser.add_argument("--executor-mem", default="20g", help="e.g. 20g, 14g, 9g, 7g")
+    parser.add_argument("--driver-mem", default="8g", help="Fixed: 8g")
+    parser.add_argument("--executor-cores", type=int, default=5, choices=[1,2,3,5])
+    parser.add_argument("--num-executors", type=int, default=8, choices=[8,16,24,32])
+    parser.add_argument("--sample-fraction", type=float, default=0.01, choices=[0.01, 0.05, 0.10])
     parser.add_argument("--enable-stage-metrics", action="store_true")
     parser.add_argument("--event-log-dir", default=None)
     parser.add_argument("--log-dir", type=str, default=None,
