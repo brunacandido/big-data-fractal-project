@@ -116,9 +116,9 @@ def main(args):
         raise ValueError("--input must contain exactly 3 paths: train, val, test")
     train_path, val_path, test_path = args.input
 
-    # ---------------------------
+    # ----------------------------------------------------------------------
     # Load datasets using file-level sampling
-    # ---------------------------
+    # ----------------------------------------------------------------------
     df_train = load_sample(spark, train_path, args.sample_fraction, parq_cols)
     df_val   = load_sample(spark, val_path,   args.sample_fraction, parq_cols)
     df_test  = load_sample(spark, test_path,  args.sample_fraction, parq_cols)
@@ -129,9 +129,9 @@ def main(args):
     df_test  = df_test.repartition(repart_num)
     print(f"Data repartitioned to {repart_num} partitions")
 
-    # ---------------------------
+    # ----------------------------------------------------------------------
     # Preprocessing Pipeline
-    # ---------------------------
+    # ----------------------------------------------------------------------
     assembler = VectorAssembler(
         inputCols=["x","y","z_norm","Intensity","Red","Green","Blue","Infrared","NDVI"],
         outputCol="features",
@@ -154,10 +154,10 @@ def main(args):
     evaluator = MulticlassClassificationEvaluator(labelCol="Classification", 
                                                   predictionCol="prediction", 
                                                   metricName="accuracy")
-    
-    # ---------------------------
+
+    # ----------------------------------------------------------------------
     # RandomForest hyperparameter tuning on val set
-    # ---------------------------
+    # ----------------------------------------------------------------------
     best_acc = 0.0
     best_params = {}
     print("\n============< Validation Accuracy >============")
@@ -171,9 +171,9 @@ def main(args):
             best_params = {"numTrees": n}
     print(f"\nBest: numTrees={best_params['numTrees']} (acc={best_acc:.4f})")
 
-    # ---------------------------
+    # ----------------------------------------------------------------------
     # Evaluate best model on test set
-    # ---------------------------
+    # ----------------------------------------------------------------------
     final_model = RandomForestClassifier(labelCol="Classification", 
                                          featuresCol="features", 
                                          seed=42, 
@@ -188,9 +188,9 @@ def main(args):
     print("\n============< Task Metrics >============")
     taskmetrics.print_report()
 
-    # ----------------------------------- 
-    # SAVE LOG TO S3 
-    # ------------------------------------
+    # ----------------------------------------------------------------------
+    # Save log file to S3 bucket
+    # ----------------------------------------------------------------------
     if args.log_dir:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = f"{args.log_dir}run_{timestamp}_frac{args.sample_fraction}_exec{args.num_executors}.log"
@@ -257,7 +257,7 @@ if __name__ == "__main__":
 
 
 
-# to run the script
+# to run the script use the command below:
 # spark-submit \
 #   --master yarn \
 #   --deploy-mode cluster \
