@@ -79,8 +79,7 @@ def load_sample(spark, path, fraction, cols):
     random.seed(42)
     selected_files = random.sample(all_files, num_files)
     print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
-    return spark.read.parquet(*selected_files).select(*cols)
-
+    return spark.read.parquet(selected_files).select(*cols)
 
 # ----------------------------------------------------------------------
 # Main
@@ -128,6 +127,8 @@ def main(args):
     # ----------------------------------------------------------------------
     # Load datasets using file-level sampling
     # ----------------------------------------------------------------------
+    parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
+
     df_train = load_sample(spark, train_path, args.sample_fraction, parq_cols)
     df_val   = load_sample(spark, val_path,   args.sample_fraction, parq_cols)
     df_test  = load_sample(spark, test_path,  args.sample_fraction, parq_cols)
@@ -275,7 +276,6 @@ if __name__ == "__main__":
                         help="S3 directory to save full log (e.g. s3a://my-logs/fractal/)")
 
     args = parser.parse_args()
-    parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
     main(args)
 
 
