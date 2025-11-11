@@ -15,6 +15,7 @@ import argparse
 import random
 from datetime import datetime
 
+
 # ----------------------------------------------------------------------
 # Pre-processing Transformers
 # ----------------------------------------------------------------------
@@ -24,31 +25,37 @@ class RemapClassification(Transformer):
             "Classification",
             when(col("Classification") == 1, lit(1))
             .when(col("Classification") == 2, lit(2))
-            .when(col("Classification").isin(3, 4, 5), lit(3))
+            .when(col("Classification").isin([3, 4, 5]), lit(3))
             .when(col("Classification") == 6, lit(4))
             .when(col("Classification") == 9, lit(5))
             .when(col("Classification") == 17, lit(6))
             .when(col("Classification") == 64, lit(7))
-            .when(col("Classification").isin(65, 66), lit(8))
+            .when(col("Classification").isin([65, 66]), lit(8))
             .otherwise(None)
         )
 
+
 class NormalizeHeight(Transformer):
     def _transform(self, df):
-        df = df.withColumn("x", col("xyz")[0]) \
-               .withColumn("y", col("xyz")[1]) \
-               .withColumn("z", col("xyz")[2])
+        df = (
+            df.withColumn("x", col("xyz")[0])
+              .withColumn("y", col("xyz")[1])
+              .withColumn("z", col("xyz")[2])
+        )
         min_z = df.agg(spark_min("z").alias("min_z")).collect()[0]["min_z"]
         return df.withColumn("z_norm", col("z") - lit(min_z))
+
 
 class ComputeNDVI(Transformer):
     def _transform(self, df):
         return df.withColumn(
             "NDVI",
-            when((col("Infrared") + col("Red")) != 0,
-                 (col("Infrared") - col("Red")) / (col("Infrared") + col("Red"))
-            ).otherwise(None)
+            when(
+                (col("Infrared") + col("Red")) != 0,
+                (col("Infrared") - col("Red")) / (col("Infrared") + col("Red")),
+            ).otherwise(None),
         )
+
 
 # ----------------------------------------------------------------------
 # File-level sampling
@@ -73,6 +80,7 @@ def load_sample(spark, path, fraction, cols):
     selected_files = random.sample(all_files, num_files)
     print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
     return spark.read.parquet(*selected_files).select(*cols)
+
 
 # ----------------------------------------------------------------------
 # Main
@@ -100,7 +108,7 @@ def main(args):
     )
 
     if args.enable_stage_metrics:
-        event_log_dir = args.event_log_dir or f"{args.log_dir}event-logs/" if args.log_dir else None
+        event_log_dir = args.event_log_dir or (f"{args.log_dir}event-logs/" if args.log_dir else None)
         if event_log_dir:
             spark = spark.config("spark.eventLog.enabled", "true") \
                          .config("spark.eventLog.dir", event_log_dir)
@@ -112,6 +120,7 @@ def main(args):
     taskmetrics = TaskMetrics(spark)
     taskmetrics.begin()
 
+    # input data path args
     if len(args.input) != 3:
         raise ValueError("--input must contain exactly 3 paths: train, val, test")
     train_path, val_path, test_path = args.input
@@ -123,64 +132,73 @@ def main(args):
     df_val   = load_sample(spark, val_path,   args.sample_fraction, parq_cols)
     df_test  = load_sample(spark, test_path,  args.sample_fraction, parq_cols)
 
-    # === REPARTITION: 4 partitions per task slot ===
+    # === REPARTITION ===
     repartitions = args.num_executors * args.executor_cores * 4
     df_train = df_train.repartition(repartitions)
     df_val   = df_val.repartition(repartitions)
     df_test  = df_test.repartition(repartitions)
-    print(f"[INFO] Data repartitioned to {repartitions} partitions ")
+    print(f"[INFO] Data repartitioned to {repartitions} partitions")
 
     # ----------------------------------------------------------------------
     # Preprocessing Pipeline
     # ----------------------------------------------------------------------
     assembler = VectorAssembler(
-        inputCols=["x","y","z_norm","Intensity","Red","Green","Blue","Infrared","NDVI"],
+        inputCols=["x", "y", "z_norm", "Intensity", "Red", "Green", "Blue", "Infrared", "NDVI"],
         outputCol="features",
         handleInvalid="skip"
     )
 
     pipeline = Pipeline(stages=[
-        RemapClassification(), 
-        NormalizeHeight(), 
-        ComputeNDVI(), 
+        RemapClassification(),
+        NormalizeHeight(),
+        ComputeNDVI(),
         assembler
     ])
 
     print("Fitting preprocessing pipeline...")
-    fit_pipe = pipeline.fit(df_train)
-    df_train = fit_pipe.transform(df_train)
-    df_val   = fit_pipe.transform(df_val)
-    df_test  = fit_pipe.transform(df_test)
+    data_pipeline = pipeline.fit(df_train)
+    df_train = data_pipeline.transform(df_train)
+    df_val   = data_pipeline.transform(df_val)
+    df_test  = data_pipeline.transform(df_test)
 
-    evaluator = MulticlassClassificationEvaluator(labelCol="Classification", 
-                                                  predictionCol="prediction", 
-                                                  metricName="accuracy")
+    evaluator = MulticlassClassificationEvaluator(
+        labelCol="Classification",
+        predictionCol="prediction",
+        metricName="accuracy"
+    )
 
     # ----------------------------------------------------------------------
     # RandomForest hyperparameter tuning on val set
     # ----------------------------------------------------------------------
     best_acc = 0.0
     best_params = {}
+
     print("\n============< Validation Accuracy >============")
     for n in [10, 20, 30]:
-        rf = RandomForestClassifier(labelCol="Classification", featuresCol="features", seed=42, numTrees=n, maxDepth=5)
+        rf = RandomForestClassifier(
+            labelCol="Classification", featuresCol="features", seed=42,
+            numTrees=n, maxDepth=5
+        )
         model = rf.fit(df_train)
         acc = evaluator.evaluate(model.transform(df_val))
         print(f"numTrees={n} → acc={acc:.4f}")
         if acc > best_acc:
             best_acc = acc
             best_params = {"numTrees": n}
+
     print(f"\nBest: numTrees={best_params['numTrees']} (acc={best_acc:.4f})")
 
     # ----------------------------------------------------------------------
     # Evaluate best model on test set
     # ----------------------------------------------------------------------
-    final_model = RandomForestClassifier(labelCol="Classification", 
-                                         featuresCol="features", 
-                                         seed=42, 
-                                         **best_params, 
-                                         maxDepth=5).fit(df_train)
-    
+    final_model = RandomForestClassifier(
+        labelCol="Classification",
+        featuresCol="features",
+        seed=42,
+        **best_params,
+        maxDepth=5
+    ).fit(df_train)
+
     test_acc = evaluator.evaluate(final_model.transform(df_test))
     print(f"\nTEST ACCURACY: {test_acc:.4f}")
 
@@ -193,45 +211,48 @@ def main(args):
     # ----------------------------------------------------------------------
     if args.log_dir:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = f"{args.log_dir}run_{timestamp}_frac{args.sample_fraction}_exec{args.num_executors}.log"
+        log_file = f"{args.log_dir}run_{timestamp}_frac{args.sample_fraction}_exec{args.num_executors}"
 
         report = taskmetrics.create_report_df().toPandas().to_string(index=False)
 
-        full_log = f"""=== FRACTAL SCALING EXPERIMENT ===
-                    Run ID: {timestamp}
-                    App Name: {spark.sparkContext.appName}
-                    Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} CET
+        full_log = f"""
+        === FRACTAL SCALING EXPERIMENT ===
+        Run ID: {timestamp}
+        App Name: {spark.sparkContext.appName}
+        Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} CET
 
-                    --- CONFIG ---
-                    Input Paths:
-                    Train: {train_path}
-                    Val:   {val_path}
-                    Test:  {test_path}
-                    Spark Config:
-                    Executors: {args.num_executors}
-                    Cores/Exec: {args.executor_cores}
-                    Exec Memory: {args.executor_mem}
-                    Driver Memory: {args.driver_mem}
-                    Sample Fraction: {args.sample_fraction}
-                    Total Cores: {args.num_executors * args.executor_cores * 4}
-                    Shuffle Partitions: {args.num_executors * args.executor_cores}
-                    Data Partitions: {args.num_executors * args.executor_cores}
+        --- CONFIG ---
+        Input Paths:
+        Train: {train_path}
+        Val:   {val_path}
+        Test:  {test_path}
 
-                    --- RESULTS ---
-                    Test Accuracy: {test_acc:.4f}
-                    Best Validation: numTrees={best_params['numTrees']} (acc={best_acc:.4f})
+        Spark Config:
+        Executors: {args.num_executors}
+        Cores/Exec: {args.executor_cores}
+        Exec Memory: {args.executor_mem}
+        Driver Memory: {args.driver_mem}
+        Sample Fraction: {args.sample_fraction}
+        Total Cores: {args.num_executors * args.executor_cores}
+        Shuffle Partitions: {args.num_executors * args.executor_cores * 4}
+        Data Partitions: {args.num_executors * args.executor_cores * 4}
 
-                    --- SPARK-MEASURE TASK METRICS ---
-                    {report}
+        --- RESULTS ---
+        Test Accuracy: {test_acc:.4f}
+        Best Validation: numTrees={best_params['numTrees']} (acc={best_acc:.4f})
 
-                    === END OF RUN ===
-                    """
+        --- SPARK-MEASURE TASK METRICS ---
+        {report}
+
+        === END OF RUN ===
+        """
 
         spark.sparkContext.parallelize([full_log], 1).saveAsTextFile(log_file)
         print(f"\nFull log saved to: {log_file}")
 
     spark.stop()
     print("Job finished.")
+
 
 # ----------------------------------------------------------------------
 # CLI
@@ -245,8 +266,8 @@ if __name__ == "__main__":
                         help="train_path val_path test_path")
     parser.add_argument("--executor-mem", default="20g", help="e.g. 20g, 14g, 9g, 7g")
     parser.add_argument("--driver-mem", default="8g", help="Fixed: 8g")
-    parser.add_argument("--executor-cores", type=int, default=5, choices=[1,2,3,5])
-    parser.add_argument("--num-executors", type=int, default=8, choices=[8,16,24,32])
+    parser.add_argument("--executor-cores", type=int, default=5, choices=[1, 2, 3, 5])
+    parser.add_argument("--num-executors", type=int, default=8, choices=[8, 16, 24, 32])
     parser.add_argument("--sample-fraction", type=float, default=0.01, choices=[0.01, 0.05, 0.10])
     parser.add_argument("--enable-stage-metrics", action="store_true")
     parser.add_argument("--event-log-dir", default=None)
@@ -259,13 +280,13 @@ if __name__ == "__main__":
 
 
 
-# to run the script use the command below:
+# Example run command:
 # spark-submit \
 #   --master yarn \
 #   --deploy-mode cluster \
 #   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
 #   --num-executors 8 \
-#   full_pipeline_v3.py \
+#   full_pipeline_v3_fixed.py \
 #   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
 #   --executor-mem 20g \
 #   --driver-mem 8g \
@@ -273,6 +294,7 @@ if __name__ == "__main__":
 #   --num-executors 8 \
 #   --sample-fraction 0.01 \
 #   --log-dir s3a://ubs-homes/erasmus/ethel/logs/
+
 
 # num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
 # num of cores  5, 3, 2, 1
