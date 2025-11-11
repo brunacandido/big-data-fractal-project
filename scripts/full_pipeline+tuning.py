@@ -1,14 +1,19 @@
+# ===========================================================
 # BIG DATA - Scaling ML workflow with Spark using FRACTAL dataset
-# Bruna Cândido ; Ethel Ogallo
-# last update: 2025/11/10
+# Authors: Bruna Cândido ; Ethel Ogallo
+# Last update: 2025/11/11
+# ===========================================================
+
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, min, count
+from pyspark.sql.functions import col, when, lit, min as spark_min, count
 from pyspark.ml import Transformer, Pipeline
 from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from sparkmeasure import TaskMetrics
 import argparse
+import random
 
 # ---------------------------
 # Preprocessing Transformers
@@ -33,7 +38,7 @@ class NormalizeHeight(Transformer):
         df = df.withColumn("x", col("xyz")[0]) \
                .withColumn("y", col("xyz")[1]) \
                .withColumn("z", col("xyz")[2])
-        min_z = df.agg(min("z").alias("min_z")).collect()[0]["min_z"]
+        min_z = df.agg(spark_min("z").alias("min_z")).collect()[0]["min_z"]
         return df.withColumn("z_norm", col("z") - lit(min_z))
 
 class ComputeNDVI(Transformer):
@@ -44,13 +49,6 @@ class ComputeNDVI(Transformer):
                  (col("Infrared") - col("Red")) / (col("Infrared") + col("Red"))
             ).otherwise(None)
         )
-
-class ComputeDistribution(Transformer):
-    """Compute percentage distribution of 'Classification' column."""
-    def _transform(self, df):
-        total = df.count()
-        return df.groupBy("Classification") \
-                 .agg((count("*") / lit(total) * 100).alias("Percentage"))
 
 # ---------------------------
 # Default arguments
@@ -68,6 +66,44 @@ default_executor_cores = "2"
 parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
 # ---------------------------
+# File-level sampling of the dataset
+# ---------------------------
+def load_sample(spark, path, fraction, cols):
+    """
+    Load only a fraction of Parquet files (not rows) from a given directory.
+    This avoids reading the entire dataset before sampling.
+    """
+    print(f"\n[INFO] Loading data from {path} with file fraction={fraction}")
+    
+    sc = spark.sparkContext
+    hadoop_conf = sc._jsc.hadoopConfiguration()
+    
+    uri = sc._jvm.java.net.URI(path)
+    fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(uri, hadoop_conf)
+    file_path = sc._jvm.org.apache.hadoop.fs.Path(path)
+    
+    all_files = [
+        str(f.getPath()) for f in fs.listStatus(file_path)
+        if str(f.getPath()).endswith(".parquet")
+    ]
+    
+    if not all_files:
+        raise ValueError(f"No parquet files found under {path}")
+    
+    num_files = max(1, int(len(all_files) * fraction))
+    random.seed(42)
+    selected_files = random.sample(all_files, num_files)
+    
+    print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
+    df = spark.read.parquet(*selected_files).select(*parq_cols)
+    
+    # Optional: check row count (expensive on huge data)
+    # row_count = df.count()
+    # print(f"[INFO] Loaded {row_count} rows from {path}")
+    
+    return df
+
+# ---------------------------
 # Main
 # ---------------------------
 def main(args):
@@ -82,7 +118,6 @@ def main(args):
         .config('spark.dynamicAllocation.enabled', 'false')
         .config("spark.hadoop.fs.s3a.fast.upload", "true")
         .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
-        .config("spark.sql.shuffle.partitions", str(args.num_executors * 2))
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
@@ -90,35 +125,38 @@ def main(args):
     taskmetrics.begin()
 
     # ---------------------------
-    # Load datasets and sample fraction
+    # Load datasets using file-level sampling
     # ---------------------------
     train_files = [f for f in args.input if "train" in f.lower()]
     val_files   = [f for f in args.input if "val" in f.lower()]
     test_files  = [f for f in args.input if "test" in f.lower()]
 
-    df_train = spark.read.parquet(*train_files).select(*parq_cols)
-    df_val   = spark.read.parquet(*val_files).select(*parq_cols)
-    df_test  = spark.read.parquet(*test_files).select(*parq_cols)
+    # load, sample, and repartition datasets
+    df_train = load_sample(spark, train_files[0], args.sample_fraction, parq_cols)
+    df_train = df_train.repartition(args.num_executors * int(args.executor_cores))
 
-    # Sample fraction
-    df_train = df_train.sample(False, args.sample_fraction, seed=42)
-    df_val   = df_val.sample(False, args.sample_fraction, seed=42)
-    df_test  = df_test.sample(False, args.sample_fraction, seed=42)
+    df_val = load_sample(spark, val_files[0], args.sample_fraction, parq_cols)
+    df_val = df_val.repartition(args.num_executors * int(args.executor_cores))
+
+    df_test = load_sample(spark, test_files[0], args.sample_fraction, parq_cols)
+    df_test = df_test.repartition(args.num_executors * int(args.executor_cores))
 
     # ---------------------------
-    # Preprocessing pipeline (fit once)
+    # Preprocessing pipeline
     # ---------------------------
     assembler = VectorAssembler(
         inputCols=["x","y","z_norm","Intensity","Red","Green","Blue","Infrared","NDVI"],
         outputCol="features",
         handleInvalid="skip"
     )
+
     data_pipeline = Pipeline(stages=[
         RemapClassification(),
         NormalizeHeight(),
         ComputeNDVI(),
         assembler
     ])
+
     fit_pipeline = data_pipeline.fit(df_train)
     df_train = fit_pipeline.transform(df_train)
     df_val   = fit_pipeline.transform(df_val)
@@ -157,7 +195,7 @@ def main(args):
     print(f"Best params: numTrees={best_params['numTrees']} with val accuracy = {best_acc:.4f}")
 
     # ---------------------------
-    # Refit final RF model with best parameters on train set
+    # Refit final RF model on train set
     # ---------------------------
     opt_rf = RandomForestClassifier(
         labelCol="Classification",
@@ -172,26 +210,19 @@ def main(args):
     # Predict on test set
     # ---------------------------
     test_pred = final_model.transform(df_test)
-
-    evaluator_f1        = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="f1")
-    evaluator_precision = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="weightedPrecision")
-    evaluator_recall    = MulticlassClassificationEvaluator(labelCol="Classification", predictionCol="prediction", metricName="weightedRecall")
-    
-    acc_test       = evaluator.evaluate(test_pred)
-    f1_test        = evaluator_f1.evaluate(test_pred)
-    precision_test  = evaluator_precision.evaluate(test_pred)
-    recall_test     = evaluator_recall.evaluate(test_pred)
+    acc_test = evaluator.evaluate(test_pred)
 
     print("\n============< Test Set Metrics >============")
     print(f"Accuracy : {acc_test:.4f}")
-    print(f"F1 Score : {f1_test:.4f}")
-    print(f"Precision: {precision_test:.4f}")
-    print(f"Recall   : {recall_test:.4f}")
 
+    # ---------------------------
+    # Task metrics
+    # ---------------------------
     taskmetrics.end()
     print("\n============< Transformation Statistics >============")
     taskmetrics.print_report()
     spark.stop()
+
 
 # ---------------------------
 # CLI Entrypoint
@@ -202,10 +233,11 @@ if __name__ == "__main__":
     parser.add_argument("--executor-mem", default=default_executor_mem, help="Executor memory (e.g., '4g')")
     parser.add_argument("--driver-mem", default=default_driver_mem, help="Driver memory (e.g., '4g')")
     parser.add_argument("--executor-cores", default=default_executor_cores, help="Number of cores per executor")
-    parser.add_argument("--sample-fraction", type=float, default=0.01, help="Fraction of dataset to sample")
+    parser.add_argument("--sample-fraction", type=float, default=0.01, help="Fraction of dataset to sample (by files)")
     parser.add_argument("--num-executors", type=int, default=4, help="Number of Spark executors to use")
     args = parser.parse_args()
     main(args)
+
 
 
 # num of executors  16 , 32, 64   with 16 nodes of cluster
@@ -219,7 +251,8 @@ if __name__ == "__main__":
 #   --num-executors 8 \
 #   full_pipeline_v3.py \
 #     --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
-#     --executor-mem 14g --driver-mem 4g --executor-cores 5 \
+#     --executor-mem 20g --driver-mem 20g --executor-cores 5 \
 #     --num-executors 8 --sample-fraction 0.01
+
 
 
