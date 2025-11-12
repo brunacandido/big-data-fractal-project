@@ -79,7 +79,7 @@ def load_sample(spark, path, fraction, cols):
     random.seed(42)
     selected_files = random.sample(all_files, num_files)
     print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
-    return spark.read.parquet(selected_files).select(*cols)
+    return spark.read.parquet(*selected_files).select(*cols)
 
 # ----------------------------------------------------------------------
 # Main
@@ -103,7 +103,7 @@ def main(args):
         .config("spark.sql.shuffle.partitions", str(args.num_executors * args.executor_cores * 4))
         .config("spark.sql.files.maxPartitionBytes", "268435456")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728")
+        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") 
     )
 
     if args.enable_stage_metrics:
@@ -286,7 +286,7 @@ if __name__ == "__main__":
 #   --deploy-mode cluster \
 #   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
 #   --num-executors 8 \
-#   full_pipeline_v3_fixed.py \
+#   pipeline_final.py \
 #   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
 #   --executor-mem 20g \
 #   --driver-mem 8g \
@@ -299,3 +299,4 @@ if __name__ == "__main__":
 # num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
 # num of cores  5, 3, 2, 1
 # memory per executor  20g, 14g, 9g, 7g
+
