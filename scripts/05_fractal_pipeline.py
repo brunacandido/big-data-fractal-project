@@ -265,9 +265,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--input", nargs="+", required=True,
                         help="train_path val_path test_path")
-    parser.add_argument("--executor-mem", default="20g", help="e.g. 20g, 14g, 9g, 7g")
-    parser.add_argument("--driver-mem", default="8g", help="Fixed: 8g")
-    parser.add_argument("--executor-cores", type=int, default=5, choices=[1, 2, 3, 5])
+    parser.add_argument("--executor-mem", default="8g", help="Fixed: 8g")
+    parser.add_argument("--driver-mem", default="6g", help="Fixed: 6g")
+    parser.add_argument("--executor-cores", type=int, default=2, choices=[1, 2, 3, 5])
     parser.add_argument("--num-executors", type=int, default=8, choices=[8, 16, 24, 32])
     parser.add_argument("--sample-fraction", type=float, default=0.01, choices=[0.01, 0.05, 0.10])
     parser.add_argument("--enable-stage-metrics", action="store_true")
@@ -280,7 +280,7 @@ if __name__ == "__main__":
 
 
 
-# Example run command:
+# Example run command:s
 # spark-submit \
 #   --master yarn \
 #   --deploy-mode cluster \
@@ -288,15 +288,12 @@ if __name__ == "__main__":
 #   --num-executors 8 \
 #   pipeline_final.py \
 #   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
-#   --executor-mem 20g \
-#   --driver-mem 8g \
-#   --executor-cores 5 \
 #   --num-executors 8 \
 #   --sample-fraction 0.01 \
 #   --log-dir s3a://ubs-homes/erasmus/ethel/logs/
 
 
 # num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
-# num of cores  5, 3, 2, 1
-# memory per executor  20g, 14g, 9g, 7g
+# num of cores  maintain as 2
+# memory per executor  maintain 8
 
