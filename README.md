@@ -22,10 +22,10 @@ The project uses the FRACTAL dataset, which consists of large-scale LiDAR point 
 ```
 big-data-fractal-project/
 │
-├─ src/                      # PySpark scripts for preprocessing and ML pipeline
-│   ├─ preprocess.py         # Data cleaning, filtering, and feature engineering
-│   ├─ model.py              # Model training and evaluation
-├─ models/                   # Saved trained models
+├─ scripts/                  # PySpark scripts for preprocessing and ML pipeline
+│   ├─ preprocess.py         
+│   ├─ model.py              
+├─ results/                  # Scaling results
 ├─ figures/                  # Plots for report
 ├─ reports/                  # PDF final report
 ├─ README.md
