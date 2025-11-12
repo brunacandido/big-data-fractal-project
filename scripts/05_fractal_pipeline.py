@@ -227,16 +227,15 @@ if __name__ == "__main__":
 
 
 # Example run command:s
-spark-submit \
-  --master yarn \
-  --deploy-mode cluster \
-  --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
-  --num-executors 8 \
-  full_pipeline_v4.py \
-  --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
-  --num-executors 8 \
-  --sample-fraction 0.01 \
-  --log-dir s3a://ubs-homes/erasmus/ethel/logs/
+# spark-submit \
+#   --master yarn \
+#   --deploy-mode cluster \
+#   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
+#   --num-executors 8 \
+#   full_pipeline_v4.py \
+#   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
+#   --num-executors 8 \
+#   --sample-fraction 0.01 \
 
 
 # num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
