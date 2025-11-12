@@ -1,0 +1,60 @@
+Spark session created with app name: Fractal: frac=0.01 exec=32
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/train/ with file fraction=0.01
+[INFO] Loading 800/80000 files (1.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/val/ with file fraction=0.01
+[INFO] Loading 100/10000 files (1.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/test/ with file fraction=0.01
+[INFO] Loading 100/10000 files (1.0%)
+[INFO] Data repartitioned to 256 partitions
+Fitting preprocessing pipeline...
+
+============< Validation Accuracy >============
+numTrees=10 → acc=0.7759
+numTrees=20 → acc=0.7713
+numTrees=30 → acc=0.7743
+
+Best: numTrees=10 (acc=0.7759)
+
+TEST ACCURACY: 0.7524
+
+============< Task Metrics >============
+
+Scheduling mode = FIFO
+Spark Context default degree of parallelism = 64
+
+Aggregated Spark task metrics:
+numTasks => 18842
+successful tasks => 18842
+speculative tasks => 0
+taskDuration => 14573667 (4.0 h)
+schedulerDelayTime => 169807 (2.8 min)
+executorRunTime => 14237292 (4.0 h)
+executorCpuTime => 6647011 (1.8 h)
+executorDeserializeTime => 164411 (2.7 min)
+executorDeserializeCpuTime => 85556 (1.4 min)
+resultSerializationTime => 2157 (2 s)
+jvmGCTime => 241984 (4.0 min)
+shuffleFetchWaitTime => 69002 (1.2 min)
+shuffleWriteTime => 47178 (47 s)
+gettingResultTime => 0 (0 ms)
+resultSize => 5620 (5.5 KB)
+diskBytesSpilled => 0 (0 Bytes)
+memoryBytesSpilled => 0 (0 Bytes)
+peakExecutionMemory => 190864813415
+recordsRead => 2493893686
+bytesRead => 266576129807 (248.3 GB)
+recordsWritten => 0
+bytesWritten => 0 (0 Bytes)
+shuffleRecordsRead => 1311208860
+shuffleTotalBlocksFetched => 937447
+shuffleLocalBlocksFetched => 29672
+shuffleRemoteBlocksFetched => 907775
+shuffleTotalBytesRead => 44023850605 (41.0 GB)
+shuffleLocalBytesRead => 1381022441 (1317.0 MB)
+shuffleRemoteBytesRead => 42642828164 (39.7 GB)
+shuffleRemoteBytesReadToDisk => 0 (0 Bytes)
+shuffleBytesWritten => 44023850605 (41.0 GB)
+shuffleRecordsWritten => 1311208860

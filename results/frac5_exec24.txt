@@ -1,0 +1,60 @@
+Spark session created with app name: Fractal: frac=0.05 exec=24
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/train/ with file fraction=0.05
+[INFO] Loading 4000/80000 files (5.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/val/ with file fraction=0.05
+[INFO] Loading 500/10000 files (5.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/test/ with file fraction=0.05
+[INFO] Loading 500/10000 files (5.0%)
+[INFO] Data repartitioned to 192 partitions
+Fitting preprocessing pipeline...
+
+============< Validation Accuracy >============
+numTrees=10 → acc=0.7867
+numTrees=20 → acc=0.7831
+numTrees=30 → acc=0.7845
+
+Best: numTrees=10 (acc=0.7867)
+
+TEST ACCURACY: 0.7693
+
+============< Task Metrics >============
+
+Scheduling mode = FIFO
+Spark Context default degree of parallelism = 48
+
+Aggregated Spark task metrics:
+numTasks => 19435
+successful tasks => 19435
+speculative tasks => 0
+taskDuration => 46399976 (12.9 h)
+schedulerDelayTime => 168198 (2.8 min)
+executorRunTime => 45998054 (12.8 h)
+executorCpuTime => 33523939 (9.3 h)
+executorDeserializeTime => 232712 (3.9 min)
+executorDeserializeCpuTime => 93247 (1.6 min)
+resultSerializationTime => 1012 (1 s)
+jvmGCTime => 1326978 (22 min)
+shuffleFetchWaitTime => 1249 (1 s)
+shuffleWriteTime => 263548 (4.4 min)
+gettingResultTime => 0 (0 ms)
+resultSize => 5556 (5.4 KB)
+diskBytesSpilled => 0 (0 Bytes)
+memoryBytesSpilled => 0 (0 Bytes)
+peakExecutionMemory => 3434674682
+recordsRead => 12608361334
+bytesRead => 1278752199506 (1190.9 GB)
+recordsWritten => 0
+bytesWritten => 0 (0 Bytes)
+shuffleRecordsRead => 6634322563
+shuffleTotalBlocksFetched => 790683
+shuffleLocalBlocksFetched => 33659
+shuffleRemoteBlocksFetched => 757024
+shuffleTotalBytesRead => 220241981126 (205.1 GB)
+shuffleLocalBytesRead => 9362924113 (8.7 GB)
+shuffleRemoteBytesRead => 210879057013 (196.4 GB)
+shuffleRemoteBytesReadToDisk => 0 (0 Bytes)
+shuffleBytesWritten => 220241981126 (205.1 GB)
+shuffleRecordsWritten => 6634322563

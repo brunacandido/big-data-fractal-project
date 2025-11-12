@@ -1,0 +1,60 @@
+Spark session created with app name: Fractal: frac=0.05 exec=32
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/train/ with file fraction=0.05
+[INFO] Loading 4000/80000 files (5.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/val/ with file fraction=0.05
+[INFO] Loading 500/10000 files (5.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/test/ with file fraction=0.05
+[INFO] Loading 500/10000 files (5.0%)
+[INFO] Data repartitioned to 256 partitions
+Fitting preprocessing pipeline...
+
+============< Validation Accuracy >============
+numTrees=10 → acc=0.7850
+numTrees=20 → acc=0.7819
+numTrees=30 → acc=0.7834
+
+Best: numTrees=10 (acc=0.7850)
+
+TEST ACCURACY: 0.7700
+
+============< Task Metrics >============
+
+Scheduling mode = FIFO
+Spark Context default degree of parallelism = 64
+
+Aggregated Spark task metrics:
+numTasks => 23569
+successful tasks => 23569
+speculative tasks => 0
+taskDuration => 43711958 (12.1 h)
+schedulerDelayTime => 164702 (2.7 min)
+executorRunTime => 43282670 (12.0 h)
+executorCpuTime => 35745123 (9.9 h)
+executorDeserializeTime => 262999 (4.4 min)
+executorDeserializeCpuTime => 115104 (1.9 min)
+resultSerializationTime => 1587 (2 s)
+jvmGCTime => 1594176 (27 min)
+shuffleFetchWaitTime => 2574 (3 s)
+shuffleWriteTime => 100035 (1.7 min)
+gettingResultTime => 0 (0 ms)
+resultSize => 5620 (5.5 KB)
+diskBytesSpilled => 0 (0 Bytes)
+memoryBytesSpilled => 0 (0 Bytes)
+peakExecutionMemory => 648609778761
+recordsRead => 12608361334
+bytesRead => 1338135626891 (1246.2 GB)
+recordsWritten => 0
+bytesWritten => 0 (0 Bytes)
+shuffleRecordsRead => 6634469139
+shuffleTotalBlocksFetched => 1125995
+shuffleLocalBlocksFetched => 36900
+shuffleRemoteBlocksFetched => 1089095
+shuffleTotalBytesRead => 220561139293 (205.4 GB)
+shuffleLocalBytesRead => 7184092335 (6.7 GB)
+shuffleRemoteBytesRead => 213377046958 (198.7 GB)
+shuffleRemoteBytesReadToDisk => 0 (0 Bytes)
+shuffleBytesWritten => 220561139293 (205.4 GB)
+shuffleRecordsWritten => 6634469139
