@@ -81,6 +81,7 @@ def load_sample(spark, path, fraction, cols):
     print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
     return spark.read.parquet(*selected_files).select(*cols)
 
+
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
@@ -105,12 +106,6 @@ def main(args):
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") 
     )
-
-    if args.enable_stage_metrics:
-        event_log_dir = args.event_log_dir or (f"{args.log_dir}event-logs/" if args.log_dir else None)
-        if event_log_dir:
-            spark = spark.config("spark.eventLog.enabled", "true") \
-                         .config("spark.eventLog.dir", event_log_dir)
 
     spark = spark.getOrCreate()
     print(f"Spark session created with app name: {spark.sparkContext.appName}")
@@ -207,50 +202,6 @@ def main(args):
     print("\n============< Task Metrics >============")
     taskmetrics.print_report()
 
-    # ----------------------------------------------------------------------
-    # Save log file to S3 bucket
-    # ----------------------------------------------------------------------
-    if args.log_dir:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = f"{args.log_dir}run_{timestamp}_frac{args.sample_fraction}_exec{args.num_executors}"
-
-        report = taskmetrics.create_report_df().toPandas().to_string(index=False)
-
-        full_log = f"""
-        === FRACTAL SCALING EXPERIMENT ===
-        Run ID: {timestamp}
-        App Name: {spark.sparkContext.appName}
-        Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} CET
-
-        --- CONFIG ---
-        Input Paths:
-        Train: {train_path}
-        Val:   {val_path}
-        Test:  {test_path}
-
-        Spark Config:
-        Executors: {args.num_executors}
-        Cores/Exec: {args.executor_cores}
-        Exec Memory: {args.executor_mem}
-        Driver Memory: {args.driver_mem}
-        Sample Fraction: {args.sample_fraction}
-        Total Cores: {args.num_executors * args.executor_cores}
-        Shuffle Partitions: {args.num_executors * args.executor_cores * 4}
-        Data Partitions: {args.num_executors * args.executor_cores * 4}
-
-        --- RESULTS ---
-        Test Accuracy: {test_acc:.4f}
-        Best Validation: numTrees={best_params['numTrees']} (acc={best_acc:.4f})
-
-        --- SPARK-MEASURE TASK METRICS ---
-        {report}
-
-        === END OF RUN ===
-        """
-
-        spark.sparkContext.parallelize([full_log], 1).saveAsTextFile(log_file)
-        print(f"\nFull log saved to: {log_file}")
-
     spark.stop()
     print("Job finished.")
 
@@ -267,30 +218,25 @@ if __name__ == "__main__":
                         help="train_path val_path test_path")
     parser.add_argument("--executor-mem", default="8g", help="Fixed: 8g")
     parser.add_argument("--driver-mem", default="6g", help="Fixed: 6g")
-    parser.add_argument("--executor-cores", type=int, default=2, choices=[1, 2, 3, 5])
-    parser.add_argument("--num-executors", type=int, default=8, choices=[8, 16, 24, 32])
-    parser.add_argument("--sample-fraction", type=float, default=0.01, choices=[0.01, 0.05, 0.10])
+    parser.add_argument("--executor-cores", type=int, default=2, help="Fixed: 6g")
+    parser.add_argument("--num-executors", type=int, default=8, help="Fixed: 6g")
+    parser.add_argument("--sample-fraction", type=float, default=0.01, help="Fixed: 6g")
     parser.add_argument("--enable-stage-metrics", action="store_true")
-    parser.add_argument("--event-log-dir", default=None)
-    parser.add_argument("--log-dir", type=str, default=None,
-                        help="S3 directory to save full log (e.g. s3a://my-logs/fractal/)")
-
     args = parser.parse_args()
     main(args)
 
 
-
 # Example run command:s
-# spark-submit \
-#   --master yarn \
-#   --deploy-mode cluster \
-#   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
-#   --num-executors 8 \
-#   pipeline_final.py \
-#   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
-#   --num-executors 8 \
-#   --sample-fraction 0.01 \
-#   --log-dir s3a://ubs-homes/erasmus/ethel/logs/
+spark-submit \
+  --master yarn \
+  --deploy-mode cluster \
+  --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
+  --num-executors 8 \
+  full_pipeline_v4.py \
+  --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
+  --num-executors 8 \
+  --sample-fraction 0.01 \
+  --log-dir s3a://ubs-homes/erasmus/ethel/logs/
 
 
 # num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
