@@ -1,7 +1,7 @@
 # ===========================================================
-# BIG DATA - Scaling ML workflow with Spark using FRACTAL dataset
+# BIG DATA - ML workflow with Spark using FRACTAL dataset
 # Authors: Bruna Cândido ; Ethel Ogallo
-# Last update: 11/11/2025
+# Last update: 13/11/2025
 # ===========================================================
 
 from pyspark.sql import SparkSession
@@ -19,6 +19,7 @@ from datetime import datetime
 # ----------------------------------------------------------------------
 # Pre-processing Transformers
 # ----------------------------------------------------------------------
+# function to remap the classification feature into 8 classes
 class RemapClassification(Transformer):
     def _transform(self, df):
         return df.withColumn(
@@ -34,7 +35,7 @@ class RemapClassification(Transformer):
             .otherwise(None)
         )
 
-
+# function to normalize height (z) values
 class NormalizeHeight(Transformer):
     def _transform(self, df):
         df = (
@@ -45,7 +46,7 @@ class NormalizeHeight(Transformer):
         min_z = df.agg(spark_min("z").alias("min_z")).collect()[0]["min_z"]
         return df.withColumn("z_norm", col("z") - lit(min_z))
 
-
+# function to compute NDVI (Normalized Difference Vegetation Index)
 class ComputeNDVI(Transformer):
     def _transform(self, df):
         return df.withColumn(
@@ -60,6 +61,7 @@ class ComputeNDVI(Transformer):
 # ----------------------------------------------------------------------
 # File-level sampling
 # ----------------------------------------------------------------------
+# Function to load a sample of parquet files from a given path instead of loading all files
 def load_sample(spark, path, fraction, cols):
     print(f"\n[INFO] Loading data from {path} with file fraction={fraction}")
     sc = spark.sparkContext
@@ -88,30 +90,31 @@ def load_sample(spark, path, fraction, cols):
 def main(args):
     spark = (
         SparkSession.builder
-        .appName(f'Fractal: frac={args.sample_fraction} exec={args.num_executors}')
-        .config('spark.executor.instances', args.num_executors)
-        .config('spark.executor.memory', args.executor_mem)
-        .config('spark.driver.memory', args.driver_mem)
-        .config('spark.executor.cores', args.executor_cores)
-        .config('spark.dynamicAllocation.enabled', 'false')
+        .appName(f'Fractal: frac={args.sample_fraction} exec={args.num_executors}') # Application name
+        .config('spark.executor.instances', args.num_executors) # Number of executors
+        .config('spark.executor.memory', args.executor_mem) # Executor memory
+        .config('spark.driver.memory', args.driver_mem) # Driver memory
+        .config('spark.executor.cores', args.executor_cores) # Executor cores
+        .config('spark.dynamicAllocation.enabled', 'false') 
         .config("spark.hadoop.fs.s3a.fast.upload", "true")
         .config("spark.hadoop.fs.s3a.multipart.size", "104857600")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.aws.credentials.provider",
                 "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
-        .config("spark.driver.maxResultSize", "512m")
+        .config("spark.driver.maxResultSize", "512m") # Driver max result size
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-        .config("spark.sql.shuffle.partitions", str(args.num_executors * args.executor_cores * 4))
-        .config("spark.sql.files.maxPartitionBytes", "268435456")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") 
+        .config("spark.sql.shuffle.partitions", str(args.num_executors * args.executor_cores * 4)) # optimize shuffle partitions
+        .config("spark.sql.files.maxPartitionBytes", "268435456") # 256 MB
+        .config("spark.sql.adaptive.enabled", "true") 
+        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") # 128 MB
     )
 
     spark = spark.getOrCreate()
     print(f"Spark session created with app name: {spark.sparkContext.appName}")
     spark.sparkContext.setLogLevel("WARN")
 
-    taskmetrics = TaskMetrics(spark)
+    # Initialize Task Metrics
+    taskmetrics = TaskMetrics(spark) 
     taskmetrics.begin()
 
     # input data path args
@@ -129,6 +132,7 @@ def main(args):
     df_test  = load_sample(spark, test_path,  args.sample_fraction, parq_cols)
 
     # === REPARTITION ===
+    # define number of partitions for the data based on executors and cores
     repartitions = args.num_executors * args.executor_cores * 4
     df_train = df_train.repartition(repartitions)
     df_val   = df_val.repartition(repartitions)
@@ -138,12 +142,14 @@ def main(args):
     # ----------------------------------------------------------------------
     # Preprocessing Pipeline
     # ----------------------------------------------------------------------
+    # Vectorize the features
     assembler = VectorAssembler(
         inputCols=["x", "y", "z_norm", "Intensity", "Red", "Green", "Blue", "Infrared", "NDVI"],
         outputCol="features",
         handleInvalid="skip"
     )
 
+    # create preprocessing pipeline
     pipeline = Pipeline(stages=[
         RemapClassification(),
         NormalizeHeight(),
@@ -151,12 +157,14 @@ def main(args):
         assembler
     ])
 
+    # Fit and transform the preprocessing pipeline
     print("Fitting preprocessing pipeline...")
     data_pipeline = pipeline.fit(df_train)
     df_train = data_pipeline.transform(df_train)
     df_val   = data_pipeline.transform(df_val)
     df_test  = data_pipeline.transform(df_test)
 
+    # define evaluator for classification accuracy
     evaluator = MulticlassClassificationEvaluator(
         labelCol="Classification",
         predictionCol="prediction",
@@ -218,27 +226,24 @@ if __name__ == "__main__":
                         help="train_path val_path test_path")
     parser.add_argument("--executor-mem", default="8g", help="Fixed: 8g")
     parser.add_argument("--driver-mem", default="6g", help="Fixed: 6g")
-    parser.add_argument("--executor-cores", type=int, default=2, help="Fixed: 6g")
-    parser.add_argument("--num-executors", type=int, default=8, help="Fixed: 6g")
-    parser.add_argument("--sample-fraction", type=float, default=0.01, help="Fixed: 6g")
-    parser.add_argument("--enable-stage-metrics", action="store_true")
+    parser.add_argument("--executor-cores", type=int, default=2, help="Fixed: 2")
+    parser.add_argument("--num-executors", type=int, default=8, help="Number of Spark executors to use")
+    parser.add_argument("--sample-fraction", type=float, default=0.01, help="Fraction of dataset to sample")
     args = parser.parse_args()
     main(args)
 
 
-# Example run command:s
+# To run the script, use the following command:
 # spark-submit \
 #   --master yarn \
 #   --deploy-mode cluster \
 #   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
-#   --num-executors 8 \
-#   full_pipeline_v4.py \
+#   --num-executors 30 \
+#   pipeline_final_v3.py \
 #   --input s3a://ubs-datasets/FRACTAL/data/train/ s3a://ubs-datasets/FRACTAL/data/val/ s3a://ubs-datasets/FRACTAL/data/test/ \
-#   --num-executors 8 \
-#   --sample-fraction 0.01 \
+#   --num-executors 30 \
+#   --sample-fraction 0.05
 
 
-# num of executors  8 , 16, 24 , 32   with 8 nodes of cluster
-# num of cores  maintain as 2
-# memory per executor  maintain 8
+
 

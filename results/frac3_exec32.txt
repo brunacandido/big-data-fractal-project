@@ -1,0 +1,60 @@
+Spark session created with app name: Fractal: frac=0.03 exec=32
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/train/ with file fraction=0.03
+[INFO] Loading 2400/80000 files (3.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/val/ with file fraction=0.03
+[INFO] Loading 300/10000 files (3.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/test/ with file fraction=0.03
+[INFO] Loading 300/10000 files (3.0%)
+[INFO] Data repartitioned to 256 partitions
+Fitting preprocessing pipeline...
+
+============< Validation Accuracy >============
+numTrees=10 → acc=0.7808
+numTrees=20 → acc=0.7763
+numTrees=30 → acc=0.7792
+
+Best: numTrees=10 (acc=0.7808)
+
+TEST ACCURACY: 0.7667
+
+============< Task Metrics >============
+
+Scheduling mode = FIFO
+Spark Context default degree of parallelism = 64
+
+Aggregated Spark task metrics:
+numTasks => 20803
+successful tasks => 20803
+speculative tasks => 0
+taskDuration => 38646342 (10.7 h)
+schedulerDelayTime => 167085 (2.8 min)
+executorRunTime => 38185122 (10.6 h)
+executorCpuTime => 25719649 (7.1 h)
+executorDeserializeTime => 290753 (4.8 min)
+executorDeserializeCpuTime => 106225 (1.8 min)
+resultSerializationTime => 3382 (3 s)
+jvmGCTime => 1548363 (26 min)
+shuffleFetchWaitTime => 4089 (4 s)
+shuffleWriteTime => 69949 (1.2 min)
+gettingResultTime => 0 (0 ms)
+resultSize => 5620 (5.5 KB)
+diskBytesSpilled => 0 (0 Bytes)
+memoryBytesSpilled => 0 (0 Bytes)
+peakExecutionMemory => 394735138681
+recordsRead => 7586526935
+bytesRead => 813610242199 (757.7 GB)
+recordsWritten => 0
+bytesWritten => 0 (0 Bytes)
+shuffleRecordsRead => 3990901761
+shuffleTotalBlocksFetched => 928626
+shuffleLocalBlocksFetched => 29102
+shuffleRemoteBlocksFetched => 899524
+shuffleTotalBytesRead => 133144870435 (124.0 GB)
+shuffleLocalBytesRead => 4164062227 (3.9 GB)
+shuffleRemoteBytesRead => 128980808208 (120.1 GB)
+shuffleRemoteBytesReadToDisk => 0 (0 Bytes)
+shuffleBytesWritten => 133144870435 (124.0 GB)
+shuffleRecordsWritten => 3990901761
