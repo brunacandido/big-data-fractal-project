@@ -1,7 +1,7 @@
 # ===========================================================
 # BIG DATA - Scaling ML workflow with Spark using FRACTAL dataset
 # Authors: Bruna Cândido ; Ethel Ogallo
-# Last update: 11/11/2025
+# Last update: 15/11/2025
 # ===========================================================
 
 # -----------------------------------------------------------
@@ -276,14 +276,14 @@ if __name__ == "__main__":
 
 # Number of executors: 8, 16, 24, 30 and 32
 # Number of Fractions: 0.01, 0.03, 0.05
-# Number or clusters nodes: 8
-# Number of cores per executor: 2
-# Memory per executor: 8g
+# Number or clusters nodes: 8  
+# Number of cores per executor: 2   # constant across experiments
+# Memory per executor: 8g  # constant across experiments
+# Driver memory: 6g  # constant across experiments
 
 
 # With this spark-submit command:
 
-# Example run command:s
 # spark-submit \
 #   --master yarn \
 #   --deploy-mode cluster \
