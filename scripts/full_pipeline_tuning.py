@@ -4,14 +4,24 @@
 # Last update: 2025/11/11
 # ===========================================================
 
+# -----------------------------------------------------------
+# IMPORTS
+# -----------------------------------------------------------
+# Spark SQL: manage distributed DataFrames
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, min as spark_min, count
+from pyspark.sql.functions import col, when, lit, min as spark_min
+
+# Spark ML: machine learning library
 from pyspark.ml import Transformer, Pipeline
 from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+
+# sparkmeasure: collects execution metrics (stages, tasks)
 from sparkmeasure import TaskMetrics
+
+# CLI argument parser
 import argparse
 import random
 
@@ -19,6 +29,10 @@ import random
 # Preprocessing Transformers
 # ---------------------------
 class RemapClassification(Transformer):
+    """
+    Maps raw LiDAR classification codes into fewer aggregated classes.
+    This helps simplify the prediction task by merging similar categories.
+    """
     def _transform(self, df):
         return df.withColumn(
             "Classification",
@@ -34,14 +48,27 @@ class RemapClassification(Transformer):
         )
 
 class NormalizeHeight(Transformer):
+    """
+    Extracts x, y, z coordinates from the 'xyz' array and normalizes the height
+    (z value) by subtracting the minimum z in the dataset.
+    This makes height information relative instead of absolute.
+    """
     def _transform(self, df):
+        # Extract XYZ components from array column
         df = df.withColumn("x", col("xyz")[0]) \
                .withColumn("y", col("xyz")[1]) \
                .withColumn("z", col("xyz")[2])
+        # Compute global minimum height
         min_z = df.agg(spark_min("z").alias("min_z")).collect()[0]["min_z"]
+        # Create normalized height column
         return df.withColumn("z_norm", col("z") - lit(min_z))
 
 class ComputeNDVI(Transformer):
+    """
+    Computes the NDVI index using the standard formula:
+    (NIR - Red) / (NIR + Red)
+    Helps distinguish vegetation from non-vegetation.
+    """
     def _transform(self, df):
         return df.withColumn(
             "NDVI",
@@ -63,6 +90,7 @@ default_executor_mem = "4g"
 default_driver_mem = "4g"
 default_executor_cores = "2"
 
+# Columns to read from each Parquet file
 parq_cols = ["xyz", "Intensity", "Classification", "Red", "Green", "Blue", "Infrared"]
 
 # ---------------------------
@@ -77,11 +105,13 @@ def load_sample(spark, path, fraction, cols):
     
     sc = spark.sparkContext
     hadoop_conf = sc._jsc.hadoopConfiguration()
-    
+
+    # Hadoop filesystem interface
     uri = sc._jvm.java.net.URI(path)
     fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(uri, hadoop_conf)
     file_path = sc._jvm.org.apache.hadoop.fs.Path(path)
     
+    # List all parquet files
     all_files = [
         str(f.getPath()) for f in fs.listStatus(file_path)
         if str(f.getPath()).endswith(".parquet")
@@ -90,21 +120,19 @@ def load_sample(spark, path, fraction, cols):
     if not all_files:
         raise ValueError(f"No parquet files found under {path}")
     
+    # Choose sample of files
     num_files = max(1, int(len(all_files) * fraction))
     random.seed(42)
     selected_files = random.sample(all_files, num_files)
     
+    # Read only the selected files
     print(f"[INFO] Loading {num_files}/{len(all_files)} files ({fraction*100:.1f}%)")
     df = spark.read.parquet(*selected_files).select(*parq_cols)
-    
-    # Optional: check row count (expensive on huge data)
-    # row_count = df.count()
-    # print(f"[INFO] Loaded {row_count} rows from {path}")
     
     return df
 
 # ---------------------------
-# Main
+# Main pipeline
 # ---------------------------
 def main(args):
     # Initialize Spark Session
@@ -121,6 +149,8 @@ def main(args):
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
+
+    # Start task-level metrics collection
     taskmetrics = TaskMetrics(spark)
     taskmetrics.begin()
 
@@ -157,7 +187,10 @@ def main(args):
         assembler
     ])
 
+    # Fit transformations on train set once
     fit_pipeline = data_pipeline.fit(df_train)
+
+    # Apply transformations
     df_train = fit_pipeline.transform(df_train)
     df_val   = fit_pipeline.transform(df_val)
     df_test  = fit_pipeline.transform(df_test)
@@ -176,6 +209,7 @@ def main(args):
 
     print("\n============< Validation Accuracy >============")
     for n in num_trees:
+        # Train RF model with current number of trees
         rf = RandomForestClassifier(
             labelCol="Classification",
             featuresCol="features",
@@ -184,9 +218,13 @@ def main(args):
             maxDepth=5
         )
         model = rf.fit(df_train)
+
+        # Predict on validation set
         val_pred = model.transform(df_val)
         acc = evaluator.evaluate(val_pred)
         print(f"Validation accuracy for numTrees={n}: {acc:.4f}")
+
+        # Track best performance
         if acc > best_acc:
             best_acc = acc
             best_params = {"numTrees": n}
@@ -195,7 +233,7 @@ def main(args):
     print(f"Best params: numTrees={best_params['numTrees']} with val accuracy = {best_acc:.4f}")
 
     # ---------------------------
-    # Refit final RF model on train set
+    # Train final model with best hyperparameters
     # ---------------------------
     opt_rf = RandomForestClassifier(
         labelCol="Classification",
@@ -207,7 +245,7 @@ def main(args):
     final_model = opt_rf.fit(df_train)
 
     # ---------------------------
-    # Predict on test set
+    # Test evaluation
     # ---------------------------
     test_pred = final_model.transform(df_test)
     acc_test = evaluator.evaluate(test_pred)
@@ -216,7 +254,7 @@ def main(args):
     print(f"Accuracy : {acc_test:.4f}")
 
     # ---------------------------
-    # Task metrics
+    # Print task metrics
     # ---------------------------
     taskmetrics.end()
     print("\n============< Transformation Statistics >============")
@@ -239,12 +277,15 @@ if __name__ == "__main__":
     main(args)
 
 
+# ==========================================
+# NOTES ON SPARK SUBMISSION COMMANDS
+# ==========================================
+# We used these configurations to perform scaling experiments:
 
-# num of executors  16 , 32, 64   with 16 nodes of cluster
-# num of executors  8 , 16, 32   with 8 nodes of cluster
-# num of cores  6, 3, 1
-# memory per executor  20g, 14g, 7g
+# Number of executors: 8, 16, 24, 30 and 32
+# Number of Fractions: 0.01, 0.03, 0.05
 
+# Whit this spark-submit command:
 # spark-submit \
 #   --master yarn --deploy-mode cluster \
 #   --packages ch.cern.sparkmeasure:spark-measure_2.12:0.27 \
