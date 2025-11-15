@@ -274,15 +274,18 @@ if __name__ == "__main__":
 # ==========================================
 # We used these configurations to perform scaling experiments:
 
+## Constant Experiment parameters:  
+# Number of cores per executor: 2   
+# Memory per executor: 8g  
+# Driver memory: 6g  
+
+## Dynamic parameters:
 # Number of executors: 8, 16, 24, 30 and 32
 # Number of Fractions: 0.01, 0.03, 0.05
-# Number or clusters nodes: 8  
-# Number of cores per executor: 2   # constant across experiments
-# Memory per executor: 8g  # constant across experiments
-# Driver memory: 6g  # constant across experiments
 
 
-# With this spark-submit command:
+# To execute use the spark-submit command below :
+# To run different experiments change the --num-executors and --sample-fraction values
 
 # spark-submit \
 #   --master yarn \
