@@ -1,0 +1,58 @@
+[INFO] Loading 2400/80000 files (3.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/val/ with file fraction=0.03
+[INFO] Loading 300/10000 files (3.0%)
+
+[INFO] Loading data from s3a://ubs-datasets/FRACTAL/data/test/ with file fraction=0.03
+[INFO] Loading 300/10000 files (3.0%)
+[INFO] Data repartitioned to 240 partitions
+Fitting preprocessing pipeline...
+
+============< Validation Accuracy >============
+numTrees=10 → acc=0.7784
+numTrees=20 → acc=0.7769
+numTrees=30 → acc=0.7767
+
+Best: numTrees=10 (acc=0.7784)
+
+TEST ACCURACY: 0.7665
+
+============< Task Metrics >============
+
+Scheduling mode = FIFO
+Spark Context default degree of parallelism = 60
+
+Aggregated Spark task metrics:
+numTasks => 19761
+successful tasks => 19761
+speculative tasks => 0
+taskDuration => 38080462 (10.6 h)
+schedulerDelayTime => 159646 (2.7 min)
+executorRunTime => 37659209 (10.5 h)
+executorCpuTime => 25376417 (7.0 h)
+executorDeserializeTime => 258042 (4.3 min)
+executorDeserializeCpuTime => 98019 (1.6 min)
+resultSerializationTime => 3565 (4 s)
+jvmGCTime => 1515329 (25 min)
+shuffleFetchWaitTime => 3577 (4 s)
+shuffleWriteTime => 69434 (1.2 min)
+gettingResultTime => 0 (0 ms)
+resultSize => 5604 (5.5 KB)
+diskBytesSpilled => 0 (0 Bytes)
+memoryBytesSpilled => 0 (0 Bytes)
+peakExecutionMemory => 393157580877
+recordsRead => 7586526935
+bytesRead => 814004465810 (758.1 GB)
+recordsWritten => 0
+bytesWritten => 0 (0 Bytes)
+shuffleRecordsRead => 3990865419
+shuffleTotalBlocksFetched => 855052
+shuffleLocalBlocksFetched => 28503
+shuffleRemoteBlocksFetched => 826549
+shuffleTotalBytesRead => 133073663173 (123.9 GB)
+shuffleLocalBytesRead => 4436131212 (4.1 GB)
+shuffleRemoteBytesRead => 128637531961 (119.8 GB)
+shuffleRemoteBytesReadToDisk => 0 (0 Bytes)
+shuffleBytesWritten => 133073663173 (123.9 GB)
+shuffleRecordsWritten => 3990865419
+Job finished.
